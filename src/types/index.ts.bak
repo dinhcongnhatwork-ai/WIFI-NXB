@@ -1,0 +1,203 @@
+export interface PageLayout {
+  type: 'page';
+  children: ComponentNode[];
+}
+
+export type ComponentNode =
+  | TextNode
+  | ImageNode
+  | ButtonNode
+  | VideoNode
+  | SliderNode
+  | FormNode
+  | VideoGateNode
+  | SectionNode
+  | ColumnsNode
+  | SpacerNode
+  | LogoNode
+  | BannerNode
+  | BackgroundNode
+  | BottomConnectNode;
+
+export interface TextNode {
+  type: 'text';
+  props: {
+    content: string;
+    align?: 'left' | 'center' | 'right';
+    fontSize?: string;
+    color?: string;
+  };
+}
+
+export interface ImageNode {
+  type: 'image';
+  props: {
+    src: string;
+    alt?: string;
+    width?: string;
+    height?: string;
+    objectFit?: 'cover' | 'contain' | 'fill';
+    borderRadius?: string;
+    link?: string;
+  };
+}
+
+export interface ButtonNode {
+  type: 'button';
+  props: {
+    text: string;
+    action?: 'login' | 'link' | 'scroll';
+    url?: string;
+    color?: string;
+    bgColor?: string;
+    size?: 'sm' | 'md' | 'lg';
+    fullWidth?: boolean;
+    borderRadius?: string;
+  };
+}
+
+export interface VideoNode {
+  type: 'video';
+  props: {
+    src: string;
+    autoplay?: boolean;
+    muted?: boolean;
+    loop?: boolean;
+    controls?: boolean;
+    poster?: string;
+  };
+}
+
+export interface SliderNode {
+  type: 'slider';
+  props: {
+    images: string[];
+    delay?: number;
+    autoplay?: boolean;
+    loop?: boolean;
+    showPagination?: boolean;
+  };
+}
+
+export interface FormNode {
+  type: 'form';
+  props: {
+    fields: string[];
+    buttonText?: string;
+    buttonColor?: string;
+    buttonBgColor?: string;
+  };
+}
+
+export interface VideoGateNode {
+  type: 'video_gate';
+  props: {
+    video_url: string;
+    skip_after: number;
+    poster?: string;
+  };
+}
+
+export interface SectionNode {
+  type: 'section';
+  props: {
+    bgColor?: string;
+    bgImage?: string;
+    padding?: string;
+    minHeight?: string;
+  };
+  children?: ComponentNode[];
+}
+
+export interface ColumnsNode {
+  type: 'columns';
+  props: {
+    columns: number;
+    gap?: string;
+  };
+  children?: ComponentNode[];
+}
+
+export interface SpacerNode {
+  type: 'spacer';
+  props: {
+    height: string;
+  };
+}
+
+export interface LogoNode {
+  type: 'logo';
+  props: {
+    src: string;
+    alt?: string;
+    width?: string;
+    height?: string;
+    position?: 'left' | 'center' | 'right';
+    padding?: string;
+    link?: string;
+  };
+}
+
+export interface BannerNode {
+  type: 'banner';
+  props: {
+    src: string;
+    alt?: string;
+    height?: string;
+    objectFit?: 'cover' | 'contain' | 'fill';
+    borderRadius?: string;
+    overlay?: boolean;
+    overlayColor?: string;
+    overlayOpacity?: string;
+    title?: string;
+    subtitle?: string;
+    textColor?: string;
+  };
+}
+
+export interface BackgroundNode {
+  type: 'background';
+  props: {
+    bgColor?: string;
+    bgImage?: string;
+    bgSize?: 'cover' | 'contain' | 'auto';
+    bgPosition?: string;
+    bgRepeat?: 'no-repeat' | 'repeat' | 'repeat-x' | 'repeat-y';
+    fullHeight?: boolean;
+    padding?: string;
+    overlay?: boolean;
+    overlayColor?: string;
+    overlayOpacity?: string;
+  };
+  children?: ComponentNode[];
+}
+
+export interface BottomConnectNode {
+  type: 'bottom_connect';
+  props: {
+    buttonText?: string;
+    buttonColor?: string;
+    buttonBgColor?: string;
+    buttonRadius?: string;
+    bgColor?: string;
+    showPhone?: boolean;
+    phonePlaceholder?: string;
+    termsText?: string;
+    padding?: string;
+  };
+}
+
+export interface PortalParams {
+  mac?: string;
+  ip?: string;
+  ssid?: string;
+  'link-login'?: string;
+  'link-orig'?: string;
+  trial?: string;
+}
+
+export interface ApiResponse<T = unknown> {
+  success: boolean;
+  data?: T;
+  error?: string;
+}

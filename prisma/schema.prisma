@@ -1,0 +1,238 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Template {
+  id                  String             @id @default(uuid())
+  name                String
+  layoutJson          Json               @map("layout_json")
+  thumbnail           String?
+  status              String             @default("draft")
+  createdAt           DateTime           @default(now()) @map("created_at")
+  updatedAt           DateTime           @updatedAt @map("updated_at")
+  draftVersion        Int                @default(1) @map("draft_version")
+  publishedRevisionId String?            @unique @map("published_revision_id")
+  publishedRevision   TemplateRevision?  @relation("PublishedRevision", fields: [publishedRevisionId], references: [id], onDelete: SetNull)
+  revisions           TemplateRevision[] @relation("TemplateRevisions")
+  campaigns           Campaign[]
+
+  @@map("templates")
+}
+
+model Campaign {
+  id                 String              @id @default(uuid())
+  name               String
+  ssid               String
+  templateId         String              @map("template_id")
+  template           Template            @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  startTime          DateTime            @map("start_time")
+  endTime            DateTime            @map("end_time")
+  active             Boolean             @default(true)
+  portalEnabled      Boolean             @default(false) @map("portal_enabled")
+  redirectUrl        String?             @map("redirect_url")
+  unifiSite          String?             @default("default") @map("unifi_site")
+  wlanConfId         String?             @map("wlan_conf_id")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+  logs               Log[]
+  attendanceSessions AttendanceSession[]
+
+  @@map("campaigns")
+}
+
+model WifiUser {
+  id                          String   @id @default(uuid())
+  mac                         String   @unique
+  ip                          String?
+  phone                       String?
+  lastSeenAnnouncementVersion Int      @default(0) @map("last_seen_announcement_version")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  @@map("wifi_users")
+}
+
+model Announcement {
+  id        String   @id @default(uuid())
+  version   Int      @unique @default(autoincrement())
+  title     String
+  message   String?
+  createdBy String?  @map("created_by")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("announcements")
+}
+
+model Log {
+  id         String   @id @default(uuid())
+  mac        String
+  campaignId String   @map("campaign_id")
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  loginTime  DateTime @default(now()) @map("login_time")
+  phone      String?
+  metadata   Json?
+
+  @@map("logs")
+}
+
+model Admin {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  password  String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("admins")
+}
+
+model TemplateRevision {
+  id          String    @id @default(uuid())
+  templateId  String    @map("template_id")
+  template    Template  @relation("TemplateRevisions", fields: [templateId], references: [id], onDelete: Cascade)
+  layoutJson  Json      @map("layout_json")
+  author      String
+  createdAt   DateTime  @default(now()) @map("created_at")
+  publishedBy Template? @relation("PublishedRevision")
+
+  @@index([templateId, createdAt])
+  @@map("template_revisions")
+}
+
+// =========================================================================
+// WiFi & Meeting Attendance Models (PLAN.MD)
+// =========================================================================
+
+model AttendanceSession {
+  id                      String                        @id @default(uuid())
+  name                    String
+  location                String?
+  campaignId              String?                       @map("campaign_id")
+  campaign                Campaign?                     @relation(fields: [campaignId], references: [id], onDelete: SetNull)
+  unifiSite               String                        @default("default") @map("unifi_site")
+  ssid                    String
+  wlanConfId              String?                       @map("wlan_conf_id")
+  targetApMacs            Json                          @default("[]") @map("target_ap_macs")
+  formSchema              Json                          @default("[]") @map("form_schema")
+  nameFieldKey            String                        @default("fullname") @map("name_field_key")
+  idFieldKey              String                        @default("employee_code") @map("id_field_key")
+  dialogTitle             String?                       @default("Điểm danh cuộc họp") @map("dialog_title")
+  dialogDescription       String?                       @map("dialog_description")
+  confirmButtonText       String?                       @default("Xác nhận điểm danh và kết nối") @map("confirm_button_text")
+  successMessage          String?                       @default("Điểm danh thành công! Đang cấp quyền truy cập Internet...") @map("success_message")
+  warningThresholdMinutes Int                           @default(15) @map("warning_threshold_minutes")
+  status                  String                        @default("DRAFT") // DRAFT, READY, ACTIVE, ENDED
+  startTime               DateTime                      @map("start_time")
+  endTime                 DateTime                      @map("end_time")
+  endedAt                 DateTime?                     @map("ended_at")
+  createdAt               DateTime                      @default(now()) @map("created_at")
+  updatedAt               DateTime                      @updatedAt @map("updated_at")
+  registrations           AttendanceRegistration[]
+  logs                    AttendanceLog[]
+  unregisteredClients     AttendanceUnregisteredClient[]
+
+  @@map("attendance_sessions")
+}
+
+model AttendanceRegistration {
+  id                   String                    @id @default(uuid())
+  sessionId            String                    @map("session_id")
+  session              AttendanceSession         @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  identityValue        String                    @map("identity_value")
+  displayName          String                    @map("display_name")
+  formAnswers          Json                      @default("{}") @map("form_answers")
+  primaryMac           String                    @map("primary_mac")
+  primaryIp            String?                   @map("primary_ip")
+  deviceVendor         String?                   @map("device_vendor")
+  deviceOs             String?                   @map("device_os")
+  firstSeenAt          DateTime?                 @map("first_seen_at")
+  lastSeenAt           DateTime?                 @map("last_seen_at")
+  currentApMac         String?                   @map("current_ap_mac")
+  currentRssi          Int?                      @map("current_rssi")
+  status               String                    @default("PRESENT") // PRESENT, TEMPORARY_ABSENT, ALERT_ABSENT, UNKNOWN
+  totalPresentSeconds  Int                       @default(0) @map("total_present_seconds")
+  totalAbsentSeconds   Int                       @default(0) @map("total_absent_seconds")
+  totalUnknownSeconds  Int                       @default(0) @map("total_unknown_seconds")
+  warningCount         Int                       @default(0) @map("warning_count")
+  absentStartedAt      DateTime?                 @map("absent_started_at")
+  consecutiveMissCount Int                       @default(0) @map("consecutive_miss_count")
+  createdAt            DateTime                  @default(now()) @map("created_at")
+  updatedAt            DateTime                  @updatedAt @map("updated_at")
+  intervals            AttendanceInterval[]
+  deviceHistories      AttendanceDeviceHistory[]
+
+  @@unique([sessionId, identityValue])
+  @@index([sessionId, primaryMac])
+  @@map("attendance_registrations")
+}
+
+model AttendanceInterval {
+  id              String                 @id @default(uuid())
+  registrationId  String                 @map("registration_id")
+  registration    AttendanceRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  apMac           String?                @map("ap_mac")
+  joinedAt        DateTime               @map("joined_at")
+  leftAt          DateTime?              @map("left_at")
+  durationSeconds Int?                   @map("duration_seconds")
+  status          String                 @default("PRESENT") // PRESENT, ABSENT, UNKNOWN
+
+  @@index([registrationId, joinedAt])
+  @@map("attendance_intervals")
+}
+
+model AttendanceDeviceHistory {
+  id             String                 @id @default(uuid())
+  registrationId String                 @map("registration_id")
+  registration   AttendanceRegistration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  oldMac         String                 @map("old_mac")
+  newMac         String                 @map("new_mac")
+  reason         String?
+  performedBy    String                 @default("Admin") @map("performed_by")
+  createdAt      DateTime               @default(now()) @map("created_at")
+
+  @@map("attendance_device_histories")
+}
+
+model AttendanceLog {
+  id             String            @id @default(uuid())
+  sessionId      String            @map("session_id")
+  session        AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  registrationId String?           @map("registration_id")
+  type           String // REGISTER, CONNECT, DISCONNECT, RECONNECT, ROAM_AP, DEVICE_CHANGE, ALERT_TRIGGERED, RECOVERED, SYSTEM_SYNC, SESSION_END
+  message        String
+  details        Json?
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  @@index([sessionId, createdAt])
+  @@map("attendance_logs")
+}
+
+model AttendanceUnregisteredClient {
+  id          String            @id @default(uuid())
+  sessionId   String            @map("session_id")
+  session     AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  mac         String
+  ip          String?
+  apMac       String?           @map("ap_mac")
+  signal      Int?
+  firstSeenAt DateTime          @default(now()) @map("first_seen_at")
+  lastSeenAt  DateTime          @default(now()) @map("last_seen_at")
+
+  @@unique([sessionId, mac])
+  @@map("attendance_unregistered_clients")
+}
+
+// =========================================================================
+// System Settings (Dynamic UniFi & MikroTik Configuration)
+// =========================================================================
+
+model SystemSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("system_settings")
+}

@@ -1,0 +1,794 @@
+'use client';
+
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import type { PageLayout, ComponentNode, PortalParams } from '@/types';
+
+interface Props {
+  layout: PageLayout;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+}
+
+export default function PortalRenderer({ layout, params, isPreview }: Props) {
+  if (!layout?.children?.length) {
+    return (
+      <div className="flex items-center justify-center min-h-screen p-4 text-slate-400">
+        No content to display
+      </div>
+    );
+  }
+
+  return (
+    <div className="portal-page">
+      {layout.children.map((node, i) => (
+        <RenderNode key={i} node={node} params={params} isPreview={isPreview} />
+      ))}
+    </div>
+  );
+}
+
+function RenderNode({
+  node,
+  params,
+  isPreview,
+}: {
+  node: ComponentNode;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+}) {
+  switch (node.type) {
+    case 'text':
+      return <TextComponent props={node.props} />;
+    case 'image':
+      return <ImageComponent props={node.props} />;
+    case 'button':
+      return <ButtonComponent props={node.props} params={params} isPreview={isPreview} />;
+    case 'video':
+      return <VideoComponent props={node.props} />;
+    case 'slider':
+      return <SliderComponent props={node.props} />;
+    case 'form':
+      return <FormComponent props={node.props} params={params} isPreview={isPreview} />;
+    case 'video_gate':
+      return <VideoGateComponent props={node.props} params={params} isPreview={isPreview} />;
+    case 'section':
+      return (
+        <SectionComponent props={node.props}>
+          {node.children?.map((child, i) => (
+            <RenderNode key={i} node={child} params={params} isPreview={isPreview} />
+          ))}
+        </SectionComponent>
+      );
+    case 'columns':
+      return (
+        <ColumnsComponent props={node.props}>
+          {node.children?.map((child, i) => (
+            <RenderNode key={i} node={child} params={params} isPreview={isPreview} />
+          ))}
+        </ColumnsComponent>
+      );
+    case 'spacer':
+      return <div style={{ height: node.props.height }} />;
+    case 'logo':
+      return <LogoComponent props={node.props} />;
+    case 'banner':
+      return <BannerComponent props={node.props} />;
+    case 'background':
+      return (
+        <BackgroundComponent props={node.props}>
+          {node.children?.map((child, i) => (
+            <RenderNode key={i} node={child} params={params} isPreview={isPreview} />
+          ))}
+        </BackgroundComponent>
+      );
+    case 'bottom_connect':
+      return <BottomConnectComponent props={node.props} params={params} isPreview={isPreview} />;
+    default:
+      return null;
+  }
+}
+
+// ---------- TEXT ----------
+function TextComponent({ props }: { props: any }) {
+  return (
+    <div
+      className="px-4 py-2"
+      style={{
+        textAlign: props.align || 'left',
+        fontSize: props.fontSize || undefined,
+        color: props.color || undefined,
+      }}
+      dangerouslySetInnerHTML={{ __html: props.content || '' }}
+    />
+  );
+}
+
+// ---------- IMAGE ----------
+function ImageComponent({ props }: { props: any }) {
+  const [loaded, setLoaded] = useState(false);
+
+  if (!props.src) return null;
+
+  const imgContent = (
+    <div className="px-4 py-2">
+      <img
+        src={props.src}
+        alt={props.alt || ''}
+        loading="lazy"
+        onLoad={() => setLoaded(true)}
+        className={`transition-opacity duration-300 ${loaded ? 'opacity-100' : 'opacity-0'}`}
+        style={{
+          width: props.width || '100%',
+          height: props.height || 'auto',
+          objectFit: props.objectFit || 'cover',
+          borderRadius: props.borderRadius || '0',
+          display: 'block',
+        }}
+      />
+    </div>
+  );
+
+  if (props.link) {
+    return (
+      <a href={props.link} target="_blank" rel="noopener noreferrer">
+        {imgContent}
+      </a>
+    );
+  }
+
+  return imgContent;
+}
+
+// ---------- BUTTON ----------
+function ButtonComponent({
+  props,
+  params,
+  isPreview,
+}: {
+  props: any;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+}) {
+  const sizeMap: Record<string, string> = {
+    sm: 'py-2 px-4 text-sm',
+    md: 'py-3 px-6 text-base',
+    lg: 'py-4 px-8 text-lg',
+  };
+
+  const handleClick = () => {
+    if (isPreview) return;
+
+    if (props.action === 'login') {
+      // Trigger login
+      const form = document.querySelector('[data-wm-portal-form]') as HTMLFormElement;
+      if (form) form.requestSubmit();
+      return;
+    }
+
+    if (props.action === 'link' && props.url) {
+      window.open(props.url, '_blank');
+    }
+  };
+
+  return (
+    <div className="px-4 py-2">
+      <button
+        onClick={handleClick}
+        className={`font-semibold transition-all active:scale-[0.98] ${sizeMap[props.size || 'md']} ${
+          props.fullWidth ? 'w-full block' : 'inline-block'
+        }`}
+        style={{
+          backgroundColor: props.bgColor || '#3b82f6',
+          color: props.color || '#ffffff',
+          borderRadius: props.borderRadius || '12px',
+          border: 'none',
+          cursor: 'pointer',
+        }}
+      >
+        {props.text || 'Button'}
+      </button>
+    </div>
+  );
+}
+
+// ---------- VIDEO ----------
+function VideoComponent({ props }: { props: any }) {
+  if (!props.src) return null;
+
+  return (
+    <div className="px-4 py-2">
+      <video
+        src={props.src}
+        autoPlay={props.autoplay !== false}
+        muted={props.muted !== false}
+        loop={props.loop !== false}
+        controls={props.controls !== false}
+        poster={props.poster || undefined}
+        playsInline
+        className="w-full rounded-lg"
+        style={{ maxHeight: '400px' }}
+      />
+    </div>
+  );
+}
+
+// ---------- SLIDER ----------
+function SliderComponent({ props }: { props: any }) {
+  const images: string[] = props.images || [];
+  const [current, setCurrent] = useState(0);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    if (!props.autoplay || images.length <= 1) return;
+
+    intervalRef.current = setInterval(() => {
+      setCurrent((prev) => (prev + 1) % images.length);
+    }, props.delay || 3000);
+
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [images.length, props.autoplay, props.delay]);
+
+  if (images.length === 0) return null;
+
+  return (
+    <div className="px-4 py-2">
+      <div className="relative overflow-hidden rounded-lg">
+        <div
+          className="flex transition-transform duration-500 ease-out"
+          style={{ transform: `translateX(-${current * 100}%)` }}
+        >
+          {images.map((src, i) => (
+            <div key={i} className="w-full flex-shrink-0">
+              <img
+                src={src}
+                alt={`Slide ${i + 1}`}
+                loading="lazy"
+                className="w-full h-48 sm:h-64 object-cover"
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Pagination dots */}
+        {props.showPagination !== false && images.length > 1 && (
+          <div className="absolute bottom-3 left-0 right-0 flex items-center justify-center gap-1.5">
+            {images.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => setCurrent(i)}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  i === current ? 'bg-white w-4' : 'bg-white/50'
+                }`}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- FORM ----------
+function FormComponent({
+  props,
+  params,
+  isPreview,
+}: {
+  props: any;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+}) {
+  const fields: string[] = props.fields || ['phone'];
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isPreview || submitting) return;
+
+    setSubmitting(true);
+    try {
+      const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mac: params.mac || '',
+          ip: params.ip || '',
+          ssid: params.ssid || '',
+          phone: values.phone || '',
+          linkLogin: params['link-login'] || '',
+          trial: params.trial || '',
+          sessionId,
+          ...values,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        setSubmitted(true);
+        if (data.data?.redirect) {
+          window.location.href = data.data.redirect;
+        }
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div className="px-4 py-6 text-center">
+        <div className="text-3xl mb-2">✅</div>
+        <p className="text-lg font-semibold text-slate-800">Connected!</p>
+        <p className="text-sm text-slate-500 mt-1">You can now browse the internet</p>
+      </div>
+    );
+  }
+
+  const fieldLabels: Record<string, string> = {
+    phone: 'Phone Number',
+    name: 'Your Name',
+    email: 'Email Address',
+  };
+
+  const fieldTypes: Record<string, string> = {
+    phone: 'tel',
+    email: 'email',
+    name: 'text',
+  };
+
+  return (
+    <div className="px-4 py-2">
+      <form
+        onSubmit={handleSubmit}
+        data-wm-portal-form
+        className="max-w-sm mx-auto space-y-3"
+      >
+        {fields.map((field) => (
+          <input
+            key={field}
+            type={fieldTypes[field] || 'text'}
+            placeholder={fieldLabels[field] || field}
+            value={values[field] || ''}
+            onChange={(e) => setValues((v) => ({ ...v, [field]: e.target.value }))}
+            required
+            className="w-full px-4 py-3.5 border border-slate-200 rounded-xl text-base focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
+          />
+        ))}
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full py-3.5 rounded-xl text-base font-semibold transition-all active:scale-[0.98] disabled:opacity-60"
+          style={{
+            backgroundColor: props.buttonBgColor || '#3b82f6',
+            color: props.buttonColor || '#ffffff',
+          }}
+        >
+          {submitting ? (
+            <span className="inline-flex items-center gap-2">
+              <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Connecting...
+            </span>
+          ) : (
+            props.buttonText || 'Connect'
+          )}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ---------- VIDEO GATE ----------
+function VideoGateComponent({
+  props,
+  params,
+  isPreview,
+}: {
+  props: any;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+}) {
+  const [secondsLeft, setSecondsLeft] = useState(props.skip_after || 5);
+  const [canSkip, setCanSkip] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      setCanSkip(true);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      setSecondsLeft((s: number) => s - 1);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [secondsLeft]);
+
+  const handleSkip = async () => {
+    if (isPreview) {
+      setDismissed(true);
+      return;
+    }
+
+    try {
+      const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      await fetch('/api/video-complete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          mac: params.mac || '',
+        }),
+      });
+    } catch {}
+
+    setDismissed(true);
+  };
+
+  if (dismissed) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-center">
+      {props.video_url ? (
+        <video
+          ref={videoRef}
+          src={props.video_url}
+          autoPlay
+          muted
+          playsInline
+          poster={props.poster || undefined}
+          className="w-full max-h-[70vh] object-contain"
+        />
+      ) : (
+        <div className="w-full aspect-video max-w-2xl bg-slate-900 flex items-center justify-center">
+          <p className="text-slate-500">No video configured</p>
+        </div>
+      )}
+
+      <div className="mt-6">
+        {canSkip ? (
+          <button
+            onClick={handleSkip}
+            className="px-8 py-3 bg-white text-black rounded-xl font-semibold text-sm transition-all hover:bg-slate-100 active:scale-[0.98]"
+          >
+            Continue →
+          </button>
+        ) : (
+          <div className="text-white/70 text-sm text-center">
+            <div className="w-12 h-12 rounded-full border-2 border-white/30 flex items-center justify-center mb-2 mx-auto">
+              <span className="text-xl font-bold text-white">{secondsLeft}</span>
+            </div>
+            <p>Please watch before continuing</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ---------- SECTION ----------
+function SectionComponent({
+  props,
+  children,
+}: {
+  props: any;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        backgroundColor: props.bgColor || undefined,
+        backgroundImage: props.bgImage ? `url(${props.bgImage})` : undefined,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        padding: props.padding || '20px',
+        minHeight: props.minHeight || undefined,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ---------- COLUMNS ----------
+function ColumnsComponent({
+  props,
+  children,
+}: {
+  props: any;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      className="px-4 py-2"
+      style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${props.columns || 2}, 1fr)`,
+        gap: props.gap || '16px',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+// ---------- LOGO ----------
+function LogoComponent({ props }: { props: any }) {
+  const position = props.position || 'center';
+  const justify = position === 'left' ? 'flex-start' : position === 'right' ? 'flex-end' : 'center';
+
+  if (!props.src) return null;
+
+  const img = (
+    <img
+      src={props.src}
+      alt={props.alt || 'Logo'}
+      style={{
+        width: props.width || '120px',
+        height: props.height || 'auto',
+        objectFit: 'contain',
+      }}
+    />
+  );
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        justifyContent: justify,
+        padding: props.padding || '16px',
+      }}
+    >
+      {props.link ? (
+        <a href={props.link} target="_blank" rel="noopener noreferrer">
+          {img}
+        </a>
+      ) : (
+        img
+      )}
+    </div>
+  );
+}
+
+// ---------- BANNER ----------
+function BannerComponent({ props }: { props: any }) {
+  if (!props.src) return null;
+
+  return (
+    <div
+      style={{
+        position: 'relative',
+        height: props.height || '200px',
+        borderRadius: props.borderRadius || '0',
+        overflow: 'hidden',
+      }}
+    >
+      <img
+        src={props.src}
+        alt={props.alt || ''}
+        style={{
+          width: '100%',
+          height: '100%',
+          objectFit: props.objectFit || 'cover',
+          display: 'block',
+        }}
+      />
+      {props.overlay && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: props.overlayColor || 'rgba(0,0,0,0.4)',
+            opacity: props.overlayOpacity ? parseFloat(props.overlayOpacity) : 1,
+          }}
+        />
+      )}
+      {(props.title || props.subtitle) && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: props.textColor || '#ffffff',
+            zIndex: 1,
+          }}
+        >
+          {props.title && (
+            <h2 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: 700 }}>
+              {props.title}
+            </h2>
+          )}
+          {props.subtitle && (
+            <p style={{ margin: 0, fontSize: '14px', opacity: 0.9 }}>
+              {props.subtitle}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- BACKGROUND ----------
+function BackgroundComponent({
+  props,
+  children,
+}: {
+  props: any;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        position: 'relative',
+        backgroundColor: props.bgColor || undefined,
+        backgroundImage: props.bgImage ? `url(${props.bgImage})` : undefined,
+        backgroundSize: props.bgSize || 'cover',
+        backgroundPosition: props.bgPosition || 'center',
+        backgroundRepeat: props.bgRepeat || 'no-repeat',
+        minHeight: props.fullHeight ? '100vh' : undefined,
+        padding: props.padding || '20px',
+      }}
+    >
+      {props.overlay && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: props.overlayColor || 'rgba(0,0,0,0.3)',
+            opacity: props.overlayOpacity ? parseFloat(props.overlayOpacity) : 1,
+          }}
+        />
+      )}
+      <div style={{ position: 'relative', zIndex: 1 }}>{children}</div>
+    </div>
+  );
+}
+
+// ---------- BOTTOM CONNECT ----------
+function BottomConnectComponent({
+  props,
+  params,
+  isPreview,
+}: {
+  props: any;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+}) {
+  const [phone, setPhone] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleConnect = async () => {
+    if (isPreview || submitting) return;
+    setSubmitting(true);
+
+    try {
+      const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mac: params.mac || '',
+          ip: params.ip || '',
+          ssid: params.ssid || '',
+          phone: phone || '',
+          linkLogin: params['link-login'] || '',
+          trial: params.trial || '',
+          sessionId,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        setSubmitted(true);
+        if (data.data?.redirect) {
+          window.location.href = data.data.redirect;
+        }
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 50,
+          background: props.bgColor || '#ffffff',
+          padding: props.padding || '20px',
+          textAlign: 'center',
+          borderTop: '1px solid #e2e8f0',
+        }}
+      >
+        <p style={{ fontSize: '16px', fontWeight: 600, color: '#22c55e' }}>
+          ✅ Connected!
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+        background: props.bgColor || '#ffffff',
+        padding: props.padding || '20px',
+        borderTop: '1px solid #e2e8f0',
+        boxShadow: '0 -2px 10px rgba(0,0,0,0.05)',
+      }}
+    >
+      {props.showPhone && (
+        <input
+          type="tel"
+          placeholder={props.phonePlaceholder || 'Phone number'}
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            border: '1px solid #e2e8f0',
+            borderRadius: props.buttonRadius || '50px',
+            fontSize: '15px',
+            marginBottom: '12px',
+            boxSizing: 'border-box',
+            outline: 'none',
+          }}
+        />
+      )}
+      <button
+        onClick={handleConnect}
+        disabled={submitting}
+        style={{
+          width: '100%',
+          padding: '14px',
+          background: props.buttonBgColor || '#3b82f6',
+          color: props.buttonColor || '#ffffff',
+          border: 'none',
+          borderRadius: props.buttonRadius || '50px',
+          fontSize: '16px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          opacity: submitting ? 0.6 : 1,
+        }}
+      >
+        {submitting ? 'Connecting...' : (props.buttonText || 'Connect WiFi')}
+      </button>
+      {props.termsText && (
+        <p
+          style={{
+            fontSize: '11px',
+            color: '#94a3b8',
+            textAlign: 'center',
+            marginTop: '8px',
+          }}
+        >
+          {props.termsText}
+        </p>
+      )}
+    </div>
+  );
+}

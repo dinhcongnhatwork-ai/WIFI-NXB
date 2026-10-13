@@ -1,0 +1,352 @@
+'use client';
+
+import React, { useState, useEffect, useRef } from 'react';
+import type {
+  TemplateConfig,
+  TemplateElement,
+  LogoElement,
+  TitleElement,
+  DescriptionElement,
+  ImageElement,
+  VideoElement,
+  ConnectButtonElement,
+  VideoGateElement,
+  PortalParams,
+} from '@/types';
+
+interface Props {
+  config: TemplateConfig;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+  redirectUrl?: string;
+}
+
+export default function PortalRenderer({ config, params, isPreview, redirectUrl }: Props) {
+  const bg = config.background;
+  const bgImage = bg.imageMobile || bg.imageDesktop;
+
+  return (
+    <div className="portal-page" style={{ minHeight: '100vh', position: 'relative' }}>
+      {/* Background */}
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          zIndex: 0,
+          backgroundImage: bgImage ? `url(${bgImage})` : undefined,
+          backgroundSize: bg.type || 'cover',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          backgroundColor: bgImage ? undefined : '#1e293b',
+        }}
+      >
+        {bg.overlayOpacity > 0 && (
+          <div style={{ position: 'absolute', inset: 0, backgroundColor: bg.overlayColor, opacity: bg.overlayOpacity }} />
+        )}
+      </div>
+
+      {/* Content */}
+      <div style={{ position: 'relative', zIndex: 1, padding: bg.padding || '20px', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        {config.elements.filter(el => el.enabled).map((el) => (
+          <RenderElement
+            key={el.id}
+            element={el}
+            params={params}
+            isPreview={isPreview}
+            redirectUrl={redirectUrl}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RenderElement({
+  element,
+  params,
+  isPreview,
+  redirectUrl,
+}: {
+  element: TemplateElement;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+  redirectUrl?: string;
+}) {
+  switch (element.type) {
+    case 'logo':
+      return <LogoRenderer el={element} />;
+    case 'title':
+      return <TitleRenderer el={element} />;
+    case 'description':
+      return <DescriptionRenderer el={element} />;
+    case 'image':
+      return <ImageRenderer el={element} />;
+    case 'video':
+      return <VideoRenderer el={element} />;
+    case 'connect_button':
+      return <ConnectButtonRenderer el={element} params={params} isPreview={isPreview} redirectUrl={redirectUrl} />;
+    case 'video_gate':
+      return <VideoGateRenderer el={element} params={params} isPreview={isPreview} />;
+    default:
+      return null;
+  }
+}
+
+function LogoRenderer({ el }: { el: LogoElement }) {
+  if (!el.src) return null;
+  const justify = el.position === 'left' ? 'flex-start' : el.position === 'right' ? 'flex-end' : 'center';
+  return (
+    <div style={{ display: 'flex', justifyContent: justify, padding: '12px 0' }}>
+      <img src={el.src} alt="Logo" style={{ width: el.width, height: 'auto', objectFit: 'contain' }} />
+    </div>
+  );
+}
+
+function TitleRenderer({ el }: { el: TitleElement }) {
+  return (
+    <h1 style={{ padding: '8px 0', textAlign: el.align, color: el.color, fontSize: el.fontSize, fontWeight: 700, margin: 0 }}>
+      {el.content}
+    </h1>
+  );
+}
+
+function DescriptionRenderer({ el }: { el: DescriptionElement }) {
+  return (
+    <p style={{ padding: '4px 0', textAlign: 'center', color: el.color, fontSize: el.fontSize, margin: 0 }}>
+      {el.content}
+    </p>
+  );
+}
+
+function ImageRenderer({ el }: { el: ImageElement }) {
+  if (!el.src) return null;
+  return (
+    <div style={{ padding: '8px 0' }}>
+      <img
+        src={el.src}
+        alt={el.alt}
+        style={{
+          width: el.width,
+          height: el.height === 'auto' ? 'auto' : el.height,
+          objectFit: el.objectFit,
+          borderRadius: el.borderRadius,
+          display: 'block',
+        }}
+      />
+    </div>
+  );
+}
+
+function VideoRenderer({ el }: { el: VideoElement }) {
+  if (!el.src) return null;
+  return (
+    <div style={{ padding: '8px 0' }}>
+      <video
+        src={el.src}
+        autoPlay={el.autoplay}
+        muted={el.muted}
+        loop={el.loop}
+        controls={el.controls}
+        playsInline
+        poster={el.poster || undefined}
+        style={{ width: '100%', borderRadius: '8px' }}
+      />
+    </div>
+  );
+}
+
+function ConnectButtonRenderer({
+  el,
+  params,
+  isPreview,
+  redirectUrl,
+}: {
+  el: ConnectButtonElement;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+  redirectUrl?: string;
+}) {
+  const [phone, setPhone] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleConnect = async () => {
+    if (isPreview || submitting) return;
+    setSubmitting(true);
+    try {
+      const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mac: params.mac || '',
+          ip: params.ip || '',
+          ssid: params.ssid || '',
+          phone: phone || '',
+          linkLogin: params['link-login'] || '',
+          trial: params.trial || '',
+          sessionId,
+          redirectUrl: redirectUrl || '',
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSubmitted(true);
+        if (data.data?.redirect) {
+          setTimeout(() => { window.location.href = data.data.redirect; }, 500);
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi kết nối:', err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <div style={{ padding: '12px 0', textAlign: 'center' }}>
+        <p style={{ fontSize: '18px', fontWeight: 600, color: '#22c55e' }}>✅ Đã kết nối thành công!</p>
+        <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginTop: '4px' }}>Đang chuyển hướng...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ padding: '12px 0' }}>
+      {el.showPhone && (
+        <input
+          type="tel"
+          placeholder={el.phonePlaceholder || 'Nhập số điện thoại'}
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          style={{
+            width: '100%',
+            padding: '12px 16px',
+            border: '1px solid rgba(255,255,255,0.3)',
+            borderRadius: el.radius,
+            fontSize: '15px',
+            marginBottom: '8px',
+            boxSizing: 'border-box',
+            background: 'rgba(255,255,255,0.9)',
+            color: '#333',
+            outline: 'none',
+          }}
+        />
+      )}
+      <button
+        onClick={handleConnect}
+        disabled={submitting}
+        style={{
+          width: '100%',
+          padding: '14px',
+          background: el.bgColor,
+          color: el.color,
+          border: 'none',
+          borderRadius: el.radius,
+          fontSize: '16px',
+          fontWeight: 600,
+          cursor: 'pointer',
+          opacity: submitting ? 0.6 : 1,
+        }}
+      >
+        {submitting ? 'Đang kết nối...' : el.text}
+      </button>
+      {el.termsText && (
+        <p style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginTop: '8px' }}>
+          {el.termsText}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function VideoGateRenderer({
+  el,
+  params,
+  isPreview,
+}: {
+  el: VideoGateElement;
+  params: Partial<PortalParams>;
+  isPreview?: boolean;
+}) {
+  const [secondsLeft, setSecondsLeft] = useState(el.skipAfter || 5);
+  const [canSkip, setCanSkip] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      setCanSkip(true);
+      return;
+    }
+    const timer = setTimeout(() => setSecondsLeft(s => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [secondsLeft]);
+
+  const handleSkip = async () => {
+    if (!isPreview) {
+      try {
+        const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        await fetch('/api/video-complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, mac: params.mac || '' }),
+        });
+      } catch {}
+    }
+    setDismissed(true);
+  };
+
+  if (dismissed) return null;
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 50, background: '#000', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+      {el.videoUrl ? (
+        <video
+          ref={videoRef}
+          src={el.videoUrl}
+          autoPlay
+          muted
+          playsInline
+          poster={el.poster || undefined}
+          style={{ width: '100%', maxHeight: '70vh', objectFit: 'contain' }}
+        />
+      ) : (
+        <div style={{ width: '100%', aspectRatio: '16/9', maxWidth: '600px', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <p style={{ color: '#666' }}>Chưa có video</p>
+        </div>
+      )}
+
+      <div style={{ marginTop: '24px' }}>
+        {canSkip ? (
+          <button
+            onClick={handleSkip}
+            style={{
+              padding: '12px 32px',
+              background: 'white',
+              color: 'black',
+              border: 'none',
+              borderRadius: '12px',
+              fontWeight: 600,
+              fontSize: '14px',
+              cursor: 'pointer',
+            }}
+          >
+            Tiếp tục →
+          </button>
+        ) : (
+          <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.7)' }}>
+            <div style={{
+              width: '48px', height: '48px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 8px',
+            }}>
+              <span style={{ fontSize: '20px', fontWeight: 700, color: 'white' }}>{secondsLeft}</span>
+            </div>
+            <p style={{ fontSize: '13px' }}>Vui lòng xem video trước khi tiếp tục</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

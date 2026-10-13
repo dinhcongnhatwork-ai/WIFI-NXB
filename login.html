@@ -1,0 +1,19 @@
+<html>
+<head>
+<script>
+var url = 'http://wifi.jtsc.vn/portal';
+url += '?mac=' + encodeURIComponent('$(mac)');
+url += '&ip=' + encodeURIComponent('$(ip)');
+url += '&link-login=' + encodeURIComponent('$(link-login)');
+url += '&link-orig=' + encodeURIComponent('$(link-orig)');
+url += '&link-login-only=' + encodeURIComponent('$(link-login-only)');
+url += '&trial=' + encodeURIComponent('$(link-login-only)');
+url += '&ssid=' + encodeURIComponent('$(ssid)');
+window.location.href = url;
+</script>
+<noscript>
+<meta http-equiv="refresh" content="0;url=http://wifi.jtsc.vn/portal?mac=$(mac-esc)&ip=$(ip)&link-login=$(link-login-esc)&link-orig=$(link-orig-esc)&trial=$(link-login-only)&ssid=$(ssid)" />
+</noscript>
+</head>
+<body></body>
+</html>

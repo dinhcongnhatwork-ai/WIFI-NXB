@@ -1,0 +1,79 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wifi-marketing-backend
+    restart: always
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      APP_SERVER_MODE: backend
+      PORT: 3001
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    command: npm run start:backend
+    depends_on:
+      - postgres
+      - redis
+      - minio
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wifi-marketing-frontend
+    restart: always
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      APP_SERVER_MODE: frontend
+      PORT: 3000
+      BACKEND_URL: http://127.0.0.1:3001
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+    command: npm run start:frontend
+    depends_on:
+      - backend
+      - minio
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: wifi-marketing-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-wifimarketing}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: wifi-marketing-redis
+    restart: always
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+
+  minio:
+    image: minio/minio:latest
+    container_name: wifi-marketing-minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - miniodata:/data
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

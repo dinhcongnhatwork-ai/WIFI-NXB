@@ -1,0 +1,36 @@
+'use client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { TemplateDocumentV2 } from '@/lib/template-document';
+export type SaveState = 'saved'|'dirty'|'saving'|'error'|'conflict';
+export function useDraftSave(id:string, document:TemplateDocumentV2, initialVersion:number, token:string, enabled=true) {
+  const [state,setState]=useState<SaveState>('saved'); const [error,setError]=useState('');
+  const version=useRef(initialVersion); const latest=useRef(document); latest.current=document;
+  const saved=useRef(JSON.stringify(document)); const pending=useRef<Promise<void>|null>(null); const blocked=useRef(false);
+  const key=`cms-draft:${id}`;
+  const save=useCallback(async()=>{
+    if(!enabled) return;
+    if(blocked.current) throw new Error('Bản nháp đã được sửa ở tab khác. Tải lại hoặc xuất bản sao phục hồi.');
+    if(pending.current) { await pending.current; return; }
+    const snapshot=JSON.stringify(latest.current); if(snapshot===saved.current) return;
+    setState('saving'); setError('');
+    const operation=(async()=>{
+      try {
+        const res=await fetch(`/api/templates/${id}`,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({layoutJson:JSON.parse(snapshot),expectedVersion:version.current})});
+        const data=await res.json();
+        if(!res.ok) { if(res.status===409) blocked.current=true; throw new Error(data.error||'Không lưu được bản nháp'); }
+        version.current=data.data.draftVersion; saved.current=snapshot;
+        if(JSON.stringify(latest.current)===snapshot) { setState('saved'); localStorage.removeItem(key); } else setState('dirty');
+      } catch(e) { setState(blocked.current?'conflict':'error');setError(e instanceof Error?e.message:'Lưu thất bại');throw e; }
+    })();
+    pending.current=operation;try {await operation;}finally{pending.current=null;}
+  },[id,token,key,enabled]);
+  const flush=useCallback(async()=>{ await save(); if(JSON.stringify(latest.current)!==saved.current) await save(); },[save]);
+  useEffect(()=>{
+    if(!enabled || JSON.stringify(document)===saved.current) return;
+    if(!blocked.current) setState('dirty');
+    try{localStorage.setItem(key,JSON.stringify({version:version.current,document,updatedAt:Date.now()}));}catch{setError('Trình duyệt không còn dung lượng phục hồi. Hãy lưu bản nháp.');}
+    const timer=setTimeout(()=>{void save().catch(()=>{});},1500);return()=>clearTimeout(timer);
+  },[document,key,save,enabled]);
+  useEffect(()=>{const warn=(e:BeforeUnloadEvent)=>{if(JSON.stringify(latest.current)!==saved.current){e.preventDefault();e.returnValue='';}};window.addEventListener('beforeunload',warn);return()=>window.removeEventListener('beforeunload',warn);},[]);
+  return {state,error,flush,version,markVersion:(n:number)=>{version.current=n;}};
+}
