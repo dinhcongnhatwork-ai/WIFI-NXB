@@ -5,20 +5,20 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
-import { motion } from 'framer-motion';
 import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
-import { createDefaultTemplateConfig } from '@/types';
+import { createDocument } from '@/lib/template-document';
+import PresetGallery from '@/components/templates/PresetGallery';
 
 export default function NewTemplatePage() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, canOperate } = useAuth();
   const [name, setName] = useState('');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!canOperate || !name.trim()) return;
 
     setLoading(true);
     try {
@@ -26,7 +26,7 @@ export default function NewTemplatePage() {
         '/api/templates',
         {
           name,
-          layoutJson: createDefaultTemplateConfig(),
+          layoutJson: createDocument(),
           status: 'draft',
         },
         token!
@@ -41,11 +41,8 @@ export default function NewTemplatePage() {
   };
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.4, ease: 'easeOut' }}
-      className="max-w-2xl"
+    <div
+      className="max-w-7xl"
     >
       <div className="flex items-center gap-3 mb-6">
         <Link
@@ -60,20 +57,22 @@ export default function NewTemplatePage() {
         </div>
       </div>
 
-      <motion.form
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15, duration: 0.35 }}
+      <PresetGallery templateName={name} />
+
+      <form
         onSubmit={handleSubmit}
-        className="bg-white rounded-xl border border-slate-200 p-6"
+        className="max-w-2xl bg-white rounded-xl border border-slate-200 p-6"
       >
+        <h2 className="mb-2 text-lg font-semibold text-slate-900">Bắt đầu từ trang trống</h2>
+        <p className="mb-5 text-sm text-slate-500">Đặt tên và tự xây dựng bố cục của bạn.</p>
         <div className="mb-6">
           <label className="block text-sm font-medium text-slate-700 mb-2">
             Tên mẫu
           </label>
           <input
+            disabled={!canOperate}
             type="text"
-            defaultValue={name}
+            value={name}
             onChange={(e) => setName(e.target.value)}
             className="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             placeholder="Ví dụ: Khuyến mãi mùa hè"
@@ -84,7 +83,7 @@ export default function NewTemplatePage() {
         <div className="flex items-center gap-3">
           <button
             type="submit"
-            disabled={loading || !name.trim()}
+            disabled={!canOperate || loading || !name.trim()}
             className="px-6 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors text-sm font-medium"
           >
             {loading ? 'Đang tạo...' : 'Tạo & Mở thiết kế'}
@@ -96,7 +95,7 @@ export default function NewTemplatePage() {
             Hủy bỏ
           </Link>
         </div>
-      </motion.form>
-    </motion.div>
+      </form>
+    </div>
   );
 }

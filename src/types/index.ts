@@ -332,6 +332,9 @@ export function normalizeTemplateConfigMedia(config: TemplateConfig): TemplateCo
 // ============================================
 
 export interface PortalParams {
+  apMac?: string;
+  unifiSite?: string;
+  device?: 'mobile' | 'tablet' | 'desktop';
   mac?: string;
   ip?: string;
   ssid?: string;

@@ -1,5 +1,7 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getIdentity } from '@/lib/api-access';
 import { createMikrotikClientFromRequest } from '@/lib/mikrotik';
 
 export const dynamic = 'force-dynamic';
@@ -8,7 +10,7 @@ export const dynamic = 'force-dynamic';
  * GET /api/announcements
  * Returns the latest announcement and current version.
  */
-export async function GET() {
+async function handleGET() {
   try {
     const latest = await prisma.announcement.findFirst({
       orderBy: { version: 'desc' },
@@ -40,7 +42,7 @@ export async function GET() {
  *   - "reset-wifi": Create announcement + clear all MikroTik active sessions/cookies
  *                   This forces all clients to re-authenticate through the portal.
  */
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     const body = await req.json();
     const { action, title, message } = body as {
@@ -62,7 +64,7 @@ export async function POST(req: NextRequest) {
         data: {
           title,
           message: message || null,
-          createdBy: 'admin',
+          createdBy: (await getIdentity(req)).username,
         },
       });
 
@@ -74,7 +76,7 @@ export async function POST(req: NextRequest) {
       // If reset-wifi is requested, clear all MikroTik hotspot sessions
       if (action === 'reset-wifi') {
         try {
-          const client = createMikrotikClientFromRequest();
+          const client = await createMikrotikClientFromRequest();
 
           // 1. Remove all active sessions (forces re-auth)
           const activeRemoved = await client.removeAllHotspotActiveSessions();
@@ -139,3 +141,7 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);
+
+export const POST = withPermission('operate', handlePOST);

@@ -7,10 +7,11 @@ export function useDraftSave(id:string, document:TemplateDocumentV2, initialVers
   const version=useRef(initialVersion); const latest=useRef(document); latest.current=document;
   const saved=useRef(JSON.stringify(document)); const pending=useRef<Promise<void>|null>(null); const blocked=useRef(false);
   const key=`cms-draft:${id}`;
-  const save=useCallback(async()=>{
+  const save=useCallback(async function persist(): Promise<void> {
     if(!enabled) return;
     if(blocked.current) throw new Error('Bản nháp đã được sửa ở tab khác. Tải lại hoặc xuất bản sao phục hồi.');
-    if(pending.current) { await pending.current; return; }
+    while(pending.current) await pending.current;
+    if(blocked.current) throw new Error('Bản nháp đã được sửa ở tab khác. Tải lại hoặc xuất bản sao phục hồi.');
     const snapshot=JSON.stringify(latest.current); if(snapshot===saved.current) return;
     setState('saving'); setError('');
     const operation=(async()=>{
@@ -22,7 +23,8 @@ export function useDraftSave(id:string, document:TemplateDocumentV2, initialVers
         if(JSON.stringify(latest.current)===snapshot) { setState('saved'); localStorage.removeItem(key); } else setState('dirty');
       } catch(e) { setState(blocked.current?'conflict':'error');setError(e instanceof Error?e.message:'Lưu thất bại');throw e; }
     })();
-    pending.current=operation;try {await operation;}finally{pending.current=null;}
+    pending.current=operation;try {await operation;}finally{if(pending.current===operation) pending.current=null;}
+    if(JSON.stringify(latest.current)!==saved.current) await persist();
   },[id,token,key,enabled]);
   const flush=useCallback(async()=>{ await save(); if(JSON.stringify(latest.current)!==saved.current) await save(); },[save]);
   useEffect(()=>{

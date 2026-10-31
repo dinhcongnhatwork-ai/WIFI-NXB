@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   AlignLeft,
   AlignCenter,
@@ -53,6 +53,10 @@ import {
   type DesignSection,
   type NodeLayout,
   type NodeElement,
+  type ScreenId,
+  screenSurface,
+  flowNode,
+  findNode,
   materializeElement,
   setNodeMedia,
   mediaUrl,
@@ -111,6 +115,8 @@ function SliderInput({
 export interface CmsRightSidebarProps {
   document: TemplateDocumentV2;
   device: DeviceVariant;
+  screen?: ScreenId;
+  inspectorOnly?: boolean;
   selectedNodeId: string | null;
   selectedSectionId: string | null;
   onSelectNode: (nodeId: string | null, sectionId?: string | null) => void;
@@ -126,7 +132,7 @@ export interface CmsRightSidebarProps {
   onMoveSection: (sectionId: string, direction: 'up' | 'down') => void;
   onRenameNode: (sectionId: string, nodeId: string, newName: string) => void;
   onUpdateDocument: (updater: (doc: TemplateDocumentV2) => void) => void;
-  onConvertToFreeform?: (sectionId: string) => void;
+  onConvertToFreeform?: (sectionId: string, change?: (section: DesignSection) => void) => void;
 }
 
 type TabType = 'components' | 'layers' | 'media' | 'inspector';
@@ -134,6 +140,8 @@ type TabType = 'components' | 'layers' | 'media' | 'inspector';
 export default function CmsRightSidebar({
   document: doc,
   device,
+  screen = 'portal',
+  inspectorOnly = false,
   selectedNodeId,
   selectedSectionId,
   onSelectNode,
@@ -152,34 +160,31 @@ export default function CmsRightSidebar({
   onConvertToFreeform,
 }: CmsRightSidebarProps) {
   const [activeTab, setActiveTab] = useState<TabType>('inspector');
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1100);
   const [componentSearch, setComponentSearch] = useState('');
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
-  const activeVariant = doc.variants[device];
-
-  // When selectedNodeId changes to a valid node, switch to inspector tab
-  useEffect(() => {
-    if (selectedNodeId) {
-      setActiveTab('inspector');
-    }
-  }, [selectedNodeId]);
+  const activeVariant = screenSurface(doc.variants[device], screen);
 
   // Find selected node & active section
   let selectedNode: DesignNode | null = null;
   let activeSection: DesignSection | null = null;
 
-  for (const s of activeVariant.sections) {
-    if (s.id === selectedSectionId) activeSection = s;
-    for (const n of s.nodes) {
-      if (n.id === selectedNodeId) {
-        selectedNode = n;
-        activeSection = s;
-        break;
-      }
-    }
+  for (const section of activeVariant.sections) {
+    if (section.id === selectedSectionId) activeSection = section;
+    const node = selectedNodeId ? findNode(section.nodes, selectedNodeId) : undefined;
+    if (node) { selectedNode = node; activeSection = section; break; }
   }
+  const selectedCore = selectedNode?.element.type === 'flow_content' ? selectedNode : null;
+  if (selectedCore && selectedCore.element.type === 'flow_content') {
+    const controller = flowNode(doc.variants[device], selectedCore.element.screen);
+    if (controller) selectedNode = { ...controller, id: selectedCore.id, layout: selectedCore.layout };
+  }
+  const propertyNode = (draft: TemplateDocumentV2): DesignNode | undefined => {
+    const node = activeSection && selectedNodeId ? findNode(screenSurface(draft.variants[device], screen).sections.find(s => s.id === activeSection!.id)?.nodes || [], selectedNodeId) : undefined;
+    return node?.element.type === 'flow_content' ? flowNode(draft.variants[device], node.element.screen) : node;
+  };
 
   // Cross-device copy state
   const [copyTarget, setCopyTarget] = useState<DeviceVariant>(
@@ -207,17 +212,17 @@ export default function CmsRightSidebar({
 
   // Node updater helper
   const updateNodeLayout = (field: keyof NodeLayout, value: number) => {
-    if (!selectedNode || !activeSection) return;
+    if (!selectedNode || !activeSection || selectedCore?.locked || (!selectedCore && selectedNode.locked)) return;
+    if (!Number.isFinite(value) || ((field === 'width' || field === 'height') && value <= 0)) return;
 
     // If section is flow and updating x or y, auto convert to freeform
     if (activeSection.mode === 'flow' && (field === 'x' || field === 'y') && onConvertToFreeform) {
-      onConvertToFreeform(activeSection.id);
+      onConvertToFreeform(activeSection.id, section => { const node = findNode(section.nodes, selectedNodeId!); if (node) node.layout[field] = value; });
+      return;
     }
 
     onUpdateDocument((d) => {
-      const n = d.variants[device].sections
-        .find((s) => s.id === activeSection!.id)
-        ?.nodes.find((item) => item.id === selectedNode!.id);
+      const n = findNode(screenSurface(d.variants[device], screen).sections.find(s => s.id === activeSection!.id)?.nodes || [], selectedNodeId!);
       if (n) {
         n.layout[field] = value;
       }
@@ -227,9 +232,7 @@ export default function CmsRightSidebar({
   const updateNodeElement = (updater: (el: any, node: DesignNode) => void) => {
     if (!selectedNode || !activeSection) return;
     onUpdateDocument((d) => {
-      const n = d.variants[device].sections
-        .find((s) => s.id === activeSection!.id)
-        ?.nodes.find((item) => item.id === selectedNode!.id);
+      const n = propertyNode(d);
       if (n) {
         updater(n.element, n);
       }
@@ -239,14 +242,14 @@ export default function CmsRightSidebar({
   const updateSection = (updater: (sec: DesignSection) => void) => {
     if (!activeSection) return;
     onUpdateDocument((d) => {
-      const s = d.variants[device].sections.find((item) => item.id === activeSection!.id);
+      const s = screenSurface(d.variants[device], screen).sections.find((item) => item.id === activeSection!.id);
       if (s) updater(s);
     });
   };
 
   const updateBackground = (updater: (bg: typeof activeVariant.background) => void) => {
     onUpdateDocument((d) => {
-      updater(d.variants[device].background);
+      updater(screenSurface(d.variants[device], screen).background);
     });
   };
 
@@ -315,7 +318,7 @@ export default function CmsRightSidebar({
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
-        <div className="flex flex-col gap-2">
+        <div className={inspectorOnly ? 'hidden' : 'flex flex-col gap-2'}>
           <button
             onClick={() => {
               setActiveTab('components');
@@ -394,10 +397,11 @@ export default function CmsRightSidebar({
   const btnGhostCls = 'p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors';
 
   return (
-    <aside className="w-[360px] bg-white border-l border-gray-200 flex flex-col z-30 shrink-0 select-none text-gray-700 shadow-sm">
+    <aside data-inspector-only={inspectorOnly || undefined} className="cms-inspector w-[300px] bg-white border-l border-gray-200 flex flex-col z-30 shrink-0 select-none text-gray-700 shadow-sm">
+      {inspectorOnly && <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 text-sm font-semibold">Thuộc tính<button aria-label="Thu gọn thuộc tính" onClick={() => setIsCollapsed(true)} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100"><ChevronRight className="h-4 w-4" /></button></div>}
       {/* Tab Navigation Header */}
-      <div className="h-12 border-b border-gray-200 px-3 flex items-center justify-between shrink-0 bg-white">
-        <div className="flex items-center gap-1 bg-gray-100/80 p-1 rounded-xl">
+      <div className={inspectorOnly ? 'hidden' : 'h-12 border-b border-gray-200 px-3 flex items-center justify-between shrink-0 bg-white'}>
+        <div className="flex items-center gap-1 bg-gray-100/80 p-1 rounded-xl" hidden={inspectorOnly}>
           <button
             onClick={() => setActiveTab('components')}
             className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
@@ -770,14 +774,14 @@ export default function CmsRightSidebar({
                 </div>
                 <div className="flex items-center gap-1">
                   <button
-                    onClick={() => onDuplicateNode(activeSection!.id, selectedNode!.id)}
+                    disabled={!!selectedCore} onClick={() => onDuplicateNode(activeSection!.id, selectedNode!.id)}
                     className={btnGhostCls}
                     title="Nhân bản"
                   >
                     <Copy className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => onDeleteNode(activeSection!.id, selectedNode!.id)}
+                    disabled={!!selectedCore} onClick={() => onDeleteNode(activeSection!.id, selectedNode!.id)}
                     className="p-1.5 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors"
                     title="Xóa phần tử"
                   >
@@ -987,9 +991,7 @@ export default function CmsRightSidebar({
                         value={currentSrc}
                         onChange={(url: string) => {
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'src', url);
                               (n.element as any).src = url;
@@ -1010,9 +1012,7 @@ export default function CmsRightSidebar({
                         onChange={(e) => {
                           const val = e.target.value;
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'src', val);
                               (n.element as any).src = val;
@@ -1161,9 +1161,7 @@ export default function CmsRightSidebar({
                         value={currentSrc}
                         onChange={(url: string) => {
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'src', url);
                               (n.element as any).src = url;
@@ -1184,9 +1182,7 @@ export default function CmsRightSidebar({
                         onChange={(e) => {
                           const val = e.target.value;
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'src', val);
                               (n.element as any).src = val;
@@ -1243,9 +1239,7 @@ export default function CmsRightSidebar({
                         value={currentSrc}
                         onChange={(url: string) => {
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'src', url);
                               (n.element as any).src = url;
@@ -1266,9 +1260,7 @@ export default function CmsRightSidebar({
                         onChange={(e) => {
                           const val = e.target.value;
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'src', val);
                               (n.element as any).src = val;
@@ -1285,9 +1277,7 @@ export default function CmsRightSidebar({
                         value={currentPoster}
                         onChange={(url: string) => {
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'poster', url);
                               (n.element as any).poster = url;
@@ -1562,9 +1552,7 @@ export default function CmsRightSidebar({
                         value={currentVideoUrl}
                         onChange={(url: string) => {
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'videoUrl', url);
                               (n.element as any).videoUrl = url;
@@ -1585,9 +1573,7 @@ export default function CmsRightSidebar({
                         onChange={(e) => {
                           const val = e.target.value;
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'videoUrl', val);
                               (n.element as any).videoUrl = val;
@@ -1604,9 +1590,7 @@ export default function CmsRightSidebar({
                         value={currentPoster}
                         onChange={(url: string) => {
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'poster', url);
                               (n.element as any).poster = url;
@@ -1627,9 +1611,7 @@ export default function CmsRightSidebar({
                         onChange={(e) => {
                           const val = e.target.value;
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'poster', val);
                               (n.element as any).poster = val;
@@ -1831,6 +1813,10 @@ export default function CmsRightSidebar({
                       </button>
                     </div>
 
+                    <details className="rounded-lg border border-slate-200 p-2">
+                      <summary className="cursor-pointer text-xs font-medium text-blue-600">Chọn nhiều ảnh từ thư viện</summary>
+                      <div className="mt-3"><MediaLibrary accept="image/*" onSelectMany={items => updateNodeElement(el => { el.images = [...(el.images || []), ...items.map(item => ({ src: item.url, alt: item.name }))]; })} /></div>
+                    </details>
                     <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
                       {images.length === 0 ? (
                         <div className="p-4 bg-gray-50 border border-dashed border-gray-300 rounded-xl text-center text-xs text-gray-500">
@@ -2099,9 +2085,7 @@ export default function CmsRightSidebar({
                         value={currentImg}
                         onChange={(url: string) => {
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'imageUrl', url);
                               (n.element as any).imageUrl = url;
@@ -2122,9 +2106,7 @@ export default function CmsRightSidebar({
                         onChange={(e) => {
                           const val = e.target.value;
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'imageUrl', val);
                               (n.element as any).imageUrl = val;
@@ -2406,9 +2388,7 @@ export default function CmsRightSidebar({
                         value={currentImg}
                         onChange={(url: string) => {
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'imageSrc', url);
                               (n.element as any).imageSrc = url;
@@ -2429,9 +2409,7 @@ export default function CmsRightSidebar({
                         onChange={(e) => {
                           const val = e.target.value;
                           onUpdateDocument((d) => {
-                            const n = d.variants[device].sections
-                              .find((s) => s.id === activeSection!.id)
-                              ?.nodes.find((item) => item.id === selectedNode!.id);
+                            const n = propertyNode(d);
                             if (n) {
                               setNodeMedia(n, 'imageSrc', val);
                               (n.element as any).imageSrc = val;
@@ -2664,7 +2642,7 @@ export default function CmsRightSidebar({
                       value={bgImage}
                       onChange={(url: string) => {
                         onUpdateDocument((d) => {
-                          const target = d.variants[device];
+                          const target = screenSurface(d.variants[device], screen);
                           const ref = mediaRef(url);
                           if (ref) {
                             target.backgroundMedia.image = ref;
@@ -2687,7 +2665,7 @@ export default function CmsRightSidebar({
                       onChange={(e) => {
                         const val = e.target.value;
                         onUpdateDocument((d) => {
-                          const target = d.variants[device];
+                          const target = screenSurface(d.variants[device], screen);
                           const ref = mediaRef(val);
                           if (ref) {
                             target.backgroundMedia.image = ref;
@@ -2707,7 +2685,7 @@ export default function CmsRightSidebar({
                       value={bgVideo}
                       onChange={(url: string) => {
                         onUpdateDocument((d) => {
-                          const target = d.variants[device];
+                          const target = screenSurface(d.variants[device], screen);
                           const ref = mediaRef(url);
                           if (ref) {
                             target.backgroundMedia.video = ref;
@@ -2730,7 +2708,7 @@ export default function CmsRightSidebar({
                       onChange={(e) => {
                         const val = e.target.value;
                         onUpdateDocument((d) => {
-                          const target = d.variants[device];
+                          const target = screenSurface(d.variants[device], screen);
                           const ref = mediaRef(val);
                           if (ref) {
                             target.backgroundMedia.video = ref;
@@ -2858,7 +2836,8 @@ export default function CmsRightSidebar({
               </div>
 
               {/* Cross-device copy tool */}
-              <div className="pt-4 border-t border-gray-200">
+              <details className="pt-4 border-t border-gray-200">
+                <summary className="text-xs font-semibold cursor-pointer mb-2">Nâng cao: sao chép thiết bị</summary>
                 <h4 className={`${headingCls} mb-2`}>Sao chép sang thiết bị khác</h4>
                 <div className="space-y-2 bg-gray-50 p-3 rounded-xl border border-gray-200">
                   <div className="flex items-center gap-2">
@@ -2880,7 +2859,7 @@ export default function CmsRightSidebar({
                     Sao chép giao diện
                   </button>
                 </div>
-              </div>
+              </details>
             </div>
           )}
         </div>

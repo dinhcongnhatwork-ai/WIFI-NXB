@@ -116,3 +116,16 @@ export function detectDeviceVendor(mac: string): string {
 
   return 'Thiết bị WiFi';
 }
+
+// datetime-local is interpreted in the browser's timezone; the API receives ISO UTC.
+export function localDateTimeToIso(value: string): string {
+  const date = new Date(value);
+  if (!value || !Number.isFinite(date.getTime())) throw new Error('Thời gian không hợp lệ.');
+  return date.toISOString();
+}
+export function isoToLocalDateTime(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return '';
+  const pad = (part: number) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}

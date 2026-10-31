@@ -1,9 +1,11 @@
 'use client';
+import { authenticatedFetch } from '@/lib/api';
 
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import toast from 'react-hot-toast';
+import { useAuth } from '@/components/auth/AuthProvider';
 import {
   AttendanceSessionDto,
   AttendanceRegistrationDto,
@@ -95,6 +97,7 @@ function AbsentCountdown({
 export default function AttendanceLiveDashboardPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { token, canOperate } = useAuth();
 
   const [session, setSession] = useState<AttendanceSessionDto | null>(null);
   const [registrations, setRegistrations] = useState<AttendanceRegistrationDto[]>([]);
@@ -127,8 +130,9 @@ export default function AttendanceLiveDashboardPage() {
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const fetchSessionDetails = useCallback(async () => {
+    if (!token) return;
     try {
-      const res = await fetch(`/api/attendance/sessions/${id}`);
+      const res = await authenticatedFetch(`/api/attendance/sessions/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       const json = await res.json();
       if (json.success) {
         setSession(json.data);
@@ -143,7 +147,7 @@ export default function AttendanceLiveDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, token]);
 
   // Initial load
   useEffect(() => {
@@ -188,7 +192,7 @@ export default function AttendanceLiveDashboardPage() {
     // Secondary fallback polling every 4 seconds to guarantee updates
     const fallbackPoll = setInterval(async () => {
       try {
-        await fetch('/api/attendance/monitor/tick', { method: 'POST' });
+        await authenticatedFetch('/api/attendance/monitor/tick', { method: 'POST' });
         await fetchSessionDetails();
       } catch {
         // network error ignored
@@ -205,9 +209,10 @@ export default function AttendanceLiveDashboardPage() {
 
   // Trigger manual tick
   const handleTriggerTick = async () => {
+    if (!canOperate) return;
     try {
       setScanning(true);
-      await fetch('/api/attendance/monitor/tick', { method: 'POST' });
+      await authenticatedFetch('/api/attendance/monitor/tick', { method: 'POST' });
       await fetchSessionDetails();
       toast.success('Đã hoàn tất chu kỳ quét UniFi!');
     } catch {
@@ -219,11 +224,12 @@ export default function AttendanceLiveDashboardPage() {
 
   // End meeting
   const handleEndSession = async () => {
+    if (!canOperate) return;
     setEnding(true);
     try {
-      const res = await fetch(`/api/attendance/sessions/${id}`, {
+      const res = await authenticatedFetch(`/api/attendance/sessions/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ status: 'ENDED' }),
       });
       const json = await res.json();
@@ -243,6 +249,7 @@ export default function AttendanceLiveDashboardPage() {
 
   // Execute MAC swap
   const handleConfirmSwapMac = async () => {
+    if (!canOperate) return;
     if (!swapMacModal.registration || !swapMacModal.newMac.trim()) {
       toast.error('Vui lòng nhập địa chỉ MAC mới');
       return;
@@ -255,9 +262,9 @@ export default function AttendanceLiveDashboardPage() {
     setSwapMacModal((p) => ({ ...p, submitting: true }));
 
     try {
-      const res = await fetch(`/api/attendance/sessions/${id}/registrations`, {
+      const res = await authenticatedFetch(`/api/attendance/sessions/${id}/registrations`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           registrationId: swapMacModal.registration.id,
           newMac: swapMacModal.newMac.trim(),
@@ -377,7 +384,7 @@ export default function AttendanceLiveDashboardPage() {
               <button
                 type="button"
                 onClick={handleTriggerTick}
-                disabled={scanning}
+                disabled={!canOperate || scanning}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 shadow-sm transition-all"
                 title="Quét UniFi Controller ngay lập tức"
               >
@@ -400,6 +407,7 @@ export default function AttendanceLiveDashboardPage() {
             {isSessionActive && (
               <button
                 type="button"
+                disabled={!canOperate}
                 onClick={() => setShowEndModal(true)}
                 className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-rose-600 hover:bg-rose-700 text-white shadow-sm shadow-rose-600/20 transition-all active:scale-95"
               >
@@ -660,6 +668,7 @@ export default function AttendanceLiveDashboardPage() {
                             </button>
                             <button
                               type="button"
+                              disabled={!canOperate}
                               onClick={() =>
                                 setSwapMacModal({
                                   open: true,
@@ -738,9 +747,9 @@ export default function AttendanceLiveDashboardPage() {
                             : isSync
                               ? 'bg-blue-50 border-blue-100 text-blue-900'
                               : isRegister
-                                ? 'bg-indigo-50/50 border-indigo-100 text-indigo-900'
+                                ? 'bg-blue-50/50 border-blue-100 text-blue-900'
                                 : isDeviceChange
-                                  ? 'bg-purple-50 border-purple-200 text-purple-900'
+                                  ? 'bg-blue-50 border-blue-200 text-blue-900'
                                   : 'bg-slate-50 border-slate-100 text-slate-700';
 
                     const badgeBg =
@@ -753,7 +762,7 @@ export default function AttendanceLiveDashboardPage() {
                             : isSync
                               ? 'bg-blue-200 text-blue-900'
                               : isRegister
-                                ? 'bg-indigo-200 text-indigo-900'
+                                ? 'bg-blue-200 text-blue-900'
                                 : 'bg-slate-200 text-slate-800';
 
                     return (
@@ -981,6 +990,7 @@ export default function AttendanceLiveDashboardPage() {
             <div className="pt-4 border-t border-slate-100">
               <button
                 type="button"
+                disabled={!canOperate}
                 onClick={() => {
                   setSwapMacModal({
                     open: true,
@@ -1061,7 +1071,7 @@ export default function AttendanceLiveDashboardPage() {
               </button>
               <button
                 type="button"
-                disabled={swapMacModal.submitting}
+                disabled={!canOperate || swapMacModal.submitting}
                 onClick={handleConfirmSwapMac}
                 className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md transition-all"
               >
@@ -1098,7 +1108,7 @@ export default function AttendanceLiveDashboardPage() {
               </button>
               <button
                 type="button"
-                disabled={ending}
+                disabled={!canOperate || ending}
                 onClick={handleEndSession}
                 className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-md transition-all"
               >

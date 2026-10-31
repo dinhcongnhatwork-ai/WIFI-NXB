@@ -4,6 +4,20 @@ interface FetchOptions extends RequestInit {
   token?: string;
 }
 
+/** Shared transport for JSON APIs and network pages, including HTTP LAN sessions. */
+export function authenticatedFetch(input:string|URL,init:RequestInit={},token?:string):Promise<Response>{
+  const headers=new Headers(init.headers);
+  let sessionToken=token;
+  if(!sessionToken&&!headers.has('Authorization')&&typeof window!=='undefined'){
+    const url=new URL(input,window.location.origin);
+    if(url.origin===window.location.origin&&url.pathname.startsWith('/api/')&&url.pathname!=='/api/auth/login'){
+      try{sessionToken=window.localStorage.getItem('token')||undefined;}catch{}
+    }
+  }
+  if(sessionToken)headers.set('Authorization',`Bearer ${sessionToken}`);
+  return fetch(input,{...init,headers,credentials:init.credentials||'same-origin'});
+}
+
 function clearClientSession() {
   if (typeof window === 'undefined') {
     return;
@@ -21,19 +35,15 @@ async function fetchApi<T>(url: string, options: FetchOptions = {}): Promise<T> 
     ...(init.headers as Record<string, string>),
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
   if (!(init.body instanceof FormData)) {
     headers['Content-Type'] = 'application/json';
   }
 
-  const res = await fetch(`${BASE_URL}${url}`, {
+  const res = await authenticatedFetch(`${BASE_URL}${url}`, {
     ...init,
     headers,
     credentials: 'include',
-  });
+  },token);
 
   let data: any = {};
   try {
@@ -44,6 +54,9 @@ async function fetchApi<T>(url: string, options: FetchOptions = {}): Promise<T> 
 
   if (!res.ok) {
     if (res.status === 401) {
+      if (url.includes('/api/auth/login')) {
+        throw new Error(data.error === 'Invalid credentials' ? 'Tên đăng nhập hoặc mật khẩu không chính xác.' : (data.error || 'Đăng nhập thất bại.'));
+      }
       clearClientSession();
       throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
     }

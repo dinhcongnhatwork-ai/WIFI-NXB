@@ -3,6 +3,11 @@ import { createDefaultTemplateConfig, isTemplateConfig, type TemplateConfig, typ
 
 export type DeviceVariant = 'mobile' | 'tablet' | 'desktop';
 export type RenderMode = 'edit' | 'simulate' | 'live';
+export type GateScreenId = 'video_gate' | 'attendance_gate' | 'announcement';
+export type ScreenId = 'portal' | GateScreenId;
+export type PreviewTarget = ScreenId | 'flow';
+export const GATE_SCREENS: GateScreenId[] = ['video_gate', 'attendance_gate', 'announcement'];
+export const SCREEN_LABELS: Record<ScreenId, string> = { portal: 'Trang kết nối', video_gate: 'Video Gate', attendance_gate: 'Điểm danh họp', announcement: 'Thông báo' };
 export interface Viewport { width: number; height: number }
 export const DEVICES: Record<DeviceVariant, { label: string; presets: Viewport[] }> = {
   mobile: {
@@ -33,7 +38,8 @@ export const DEVICES: Record<DeviceVariant, { label: string; presets: Viewport[]
 export const DEVICE_KEYS = Object.keys(DEVICES) as DeviceVariant[];
 export type MediaRef = { kind: 'object'; key: string } | { kind: 'external'; url: string };
 export interface DecorationElement { id: string; type: 'container' | 'divider' | 'shape'; enabled: boolean; color: string; borderRadius: string }
-export type NodeElement = TemplateElement | DecorationElement;
+export interface FlowContentElement { id: string; type: 'flow_content'; enabled: boolean; screen: GateScreenId }
+export type NodeElement = TemplateElement | DecorationElement | FlowContentElement;
 export interface NodeLayout { x: number; y: number; width: number; height: number; rotation: number }
 export interface DesignNode {
   id: string; name: string; element: NodeElement; layout: NodeLayout; locked: boolean; hidden: boolean;
@@ -44,10 +50,14 @@ export interface DesignSection {
   gap: number; padding: number; columns: number; align: 'start' | 'center' | 'end'; background: string;
   locked: boolean; hidden: boolean; nodes: DesignNode[];
 }
-export interface DesignVariant {
-  viewport: Viewport; background: BackgroundConfig & { focalX: number; focalY: number; color: string };
+export interface DesignSurface {
+  background: BackgroundConfig & { focalX: number; focalY: number; color: string };
   backgroundMedia: Record<string, MediaRef>; sections: DesignSection[];
+}
+export interface DesignVariant extends DesignSurface {
+  viewport: Viewport;
   flow: { videoGate?: DesignNode; announcement?: DesignNode; attendanceGate?: DesignNode };
+  screens?: Partial<Record<GateScreenId, DesignSurface>>;
 }
 export interface TemplateDocumentV2 {
   schemaVersion: 2; variants: Record<DeviceVariant, DesignVariant>; brandColors: string[];
@@ -79,7 +89,7 @@ export function setNodeMedia(node: DesignNode, field: string, url: string) {
 }
 export const COMPONENT_LABELS: Record<NodeElement['type'], string> = {
   logo: 'Logo', title: 'Tiêu đề', description: 'Mô tả', image: 'Hình ảnh', image_slider: 'Slider ảnh', video: 'Video',
-  connect_button: 'Nút kết nối', attendance_gate: 'Điểm danh họp', video_gate: 'Video Gate', announcement: 'Thông báo', spacer: 'Khoảng trắng', container: 'Container', divider: 'Đường phân cách', shape: 'Hình khối',
+  connect_button: 'Nút kết nối', attendance_gate: 'Điểm danh họp', video_gate: 'Video Gate', announcement: 'Thông báo', spacer: 'Khoảng trắng', container: 'Container', divider: 'Đường phân cách', shape: 'Hình khối', flow_content: 'Nội dung chức năng',
 };
 export function createNode(type: NodeElement['type'], viewportWidth?: number): DesignNode {
   const id = uid(); const base = { id, type, enabled: true };
@@ -90,6 +100,10 @@ export function createNode(type: NodeElement['type'], viewportWidth?: number): D
   let layoutHeight = 160;
 
   switch (type) {
+    case 'flow_content':
+      element = { ...base, type, screen: 'announcement' };
+      layoutHeight = 340;
+      break;
     case 'logo':
       element = { ...base, type, src: '', width: '120px', position: 'center' };
       layoutHeight = 70;
@@ -195,7 +209,7 @@ function migrateElement(el: TemplateElement, device: DeviceVariant, viewport: Vi
   return node;
 }
 export function toDocument(value: unknown): TemplateDocumentV2 {
-  if (isTemplateDocumentV2(value)) return clone(value);
+  if (isTemplateDocumentV2(value)) return ensureScreens(clone(value));
   if (!isTemplateConfig(value) || !Array.isArray(value.elements)) throw new Error('Định dạng mẫu cũ chưa được hỗ trợ. Dữ liệu gốc được giữ nguyên.');
   const variants = {} as Record<DeviceVariant, DesignVariant>;
   for (const device of DEVICE_KEYS) {
@@ -216,23 +230,94 @@ export function toDocument(value: unknown): TemplateDocumentV2 {
     }
     variants[device] = { viewport, background: { ...clone(bg), imageMobile: '', imageDesktop: '', videoMobile: '', videoDesktop: '', padding: '0px', focalX: 50, focalY: 50, color: '#0f172a' }, backgroundMedia: { ...(image ? { image: mediaRef(image)! } : {}), ...(video ? { video: mediaRef(video)! } : {}) }, sections: [...(normal.nodes.length || !free.nodes.length ? [normal] : []), ...(free.nodes.length ? [free] : [])], flow };
   }
-  return { schemaVersion: 2, variants, brandColors: ['#2563eb', '#0f172a', '#ffffff', '#10b981', '#f59e0b'] };
+  return ensureScreens({ schemaVersion: 2, variants, brandColors: ['#2563eb', '#0f172a', '#ffffff', '#10b981', '#f59e0b'] });
 }
 export function createDocument(): TemplateDocumentV2 { return toDocument(createDefaultTemplateConfig()); }
 export function isTemplateDocumentV2(value: unknown): value is TemplateDocumentV2 {
   return !!value && typeof value === 'object' && (value as TemplateDocumentV2).schemaVersion === 2 && !!(value as TemplateDocumentV2).variants;
 }
+export function findNode(nodes: DesignNode[], id: string): DesignNode | undefined {
+  for (const node of nodes) {
+    if (node.id === id) return node;
+    const child = findNode(node.children || [], id);
+    if (child) return child;
+  }
+}
+export function flowKey(screen: GateScreenId): keyof DesignVariant['flow'] {
+  return screen === 'video_gate' ? 'videoGate' : screen === 'attendance_gate' ? 'attendanceGate' : 'announcement';
+}
+export function flowNode(variant: DesignVariant, screen: GateScreenId): DesignNode | undefined {
+  return variant.flow[flowKey(screen)] || variant.sections.flatMap(s => flattenNodes(s.nodes)).find(n => n.element.type === screen);
+}
+export function flattenNodes(nodes: DesignNode[]): DesignNode[] {
+  return nodes.flatMap(n => [n, ...flattenNodes(n.children || [])]);
+}
+export function visibleNodes(nodes: DesignNode[]): DesignNode[] {
+  return nodes.filter(n => !n.hidden && n.element.enabled).flatMap(n => [n, ...visibleNodes(n.children || [])]);
+}
+export function screenSurface(variant: DesignVariant, screen: ScreenId): DesignSurface {
+  if (screen === 'portal') return variant;
+  const surface = variant.screens?.[screen];
+  if (surface) return surface;
+  return createScreenSurface(variant, screen);
+}
+export function createScreenSurface(variant: DesignVariant, screen: GateScreenId): DesignSurface {
+  const section = createSection(variant.viewport);
+  section.name = SCREEN_LABELS[screen];
+  const core = createNode('flow_content', variant.viewport.width);
+  core.element = { id: core.id, type: 'flow_content', enabled: true, screen };
+  core.name = SCREEN_LABELS[screen];
+  core.layout.height = screen === 'attendance_gate' ? 420 : screen === 'video_gate' ? 440 : 340;
+  section.nodes = [core];
+  return { background: { ...clone(variant.background), color: '#f8fafc', overlayOpacity: 0 }, backgroundMedia: {}, sections: [section] };
+}
+/** Canonicalize an editable copy only; never call on a stored immutable snapshot. */
+export function ensureScreens(document: TemplateDocumentV2): TemplateDocumentV2 {
+  for (const device of DEVICE_KEYS) {
+    const variant = document.variants[device];
+    if (!variant || !variant.viewport || !Array.isArray(variant.sections) || !variant.flow || !variant.background) throw new Error('Cấu trúc mẫu không hợp lệ. Dữ liệu gốc được giữ nguyên.');
+    const removeGates = (nodes: DesignNode[]): DesignNode[] => nodes.filter(node => {
+      if (GATE_SCREENS.includes(node.element.type as GateScreenId)) {
+        const key = flowKey(node.element.type as GateScreenId);
+        if (!variant.flow[key]) variant.flow[key] = clone(node);
+        return false;
+      }
+      if (node.children) node.children = removeGates(node.children);
+      return true;
+    });
+    variant.sections.forEach(section => { section.nodes = removeGates(section.nodes); });
+    variant.screens ||= {};
+    for (const screen of GATE_SCREENS) {
+      const key = flowKey(screen);
+      if (!variant.flow[key]) {
+        const controller = createNode(screen, variant.viewport.width);
+        controller.element.enabled = false;
+        variant.flow[key] = controller;
+      }
+      variant.screens[screen] ||= createScreenSurface(variant, screen);
+    }
+  }
+  return document;
+}
 export function allNodes(variant: DesignVariant): DesignNode[] {
-  const flatten = (nodes: DesignNode[]): DesignNode[] => nodes.flatMap(n => [n, ...flatten(n.children || [])]);
-  return [...variant.sections.flatMap(s => flatten(s.nodes)), ...Object.values(variant.flow).filter(Boolean) as DesignNode[]];
+  return [...variant.sections.flatMap(s => flattenNodes(s.nodes)), ...Object.values(variant.screens || {}).flatMap(surface => surface?.sections.flatMap(s => flattenNodes(s.nodes)) || []), ...Object.values(variant.flow).filter(Boolean) as DesignNode[]];
 }
 export function copyVariant(doc: TemplateDocumentV2, from: DeviceVariant, to: DeviceVariant, append: boolean): TemplateDocumentV2 {
   const next = clone(doc); const source = clone(doc.variants[from]);
   const regenerate = (nodes: DesignNode[]) => nodes.forEach(n => { n.id = uid(); n.element.id = n.id; if (n.children) regenerate(n.children); });
   source.sections.forEach(s => { s.id = uid(); regenerate(s.nodes); });
+  Object.values(source.screens || {}).forEach(surface => surface?.sections.forEach(s => { s.id = uid(); regenerate(s.nodes); }));
   Object.values(source.flow).forEach(n => { if (n) { n.id = uid(); n.element.id = n.id; } });
   source.viewport = clone(next.variants[to].viewport);
-  if (append) next.variants[to].sections.push(...source.sections); else next.variants[to] = source;
+  if (append) {
+    next.variants[to].sections.push(...source.sections);
+    // A gate canvas has exactly one functional block. Append only decorative content.
+    for (const screen of GATE_SCREENS) {
+      const target = next.variants[to].screens?.[screen];
+      const decorations = (nodes: DesignNode[]): DesignNode[] => nodes.filter(n => n.element.type !== 'flow_content').map(n => n.children ? { ...n, children: decorations(n.children) } : n);
+      if (target) target.sections.push(...(source.screens?.[screen]?.sections || []).map(s => ({ ...s, nodes: decorations(s.nodes) })));
+    }
+  } else next.variants[to] = source;
   return next;
 }
 export function validateDocument(value: unknown): DocumentIssue[] {
@@ -244,6 +329,7 @@ export function validateDocument(value: unknown): DocumentIssue[] {
     if (!v || !v.viewport || !Array.isArray(v.sections) || !v.background || !v.flow || !v.backgroundMedia) { error('Thiếu cấu hình thiết bị.', device); continue; }
     if (![v.viewport.width, v.viewport.height].every(n => Number.isFinite(n) && n >= 240 && n <= 4096)) error('Viewport phải trong khoảng 240–4096px.', device);
     const ids = new Set<string>(); let connect = false;
+    let checkingPortal = true;
     const walk = (nodes: DesignNode[], section: DesignSection, ancestorHidden = false, depth = 0) => {
       if (depth > 10 || !Array.isArray(nodes) || nodes.length > 500) { error('Cây thành phần quá lớn hoặc không hợp lệ.', device); return; }
       for (const node of nodes) {
@@ -251,7 +337,7 @@ export function validateDocument(value: unknown): DocumentIssue[] {
         if (ids.has(node.id)) error('ID thành phần trùng lặp.', device, node.id); ids.add(node.id);
         if (!Object.values(node.layout).every(n => typeof n === 'number' && Number.isFinite(n)) || node.layout.width <= 0 || node.layout.height <= 0) error('Kích thước hoặc tọa độ không hợp lệ.', device, node.id);
         const visible = !ancestorHidden && !node.hidden && node.element.enabled;
-        if (visible && node.element.type === 'connect_button') connect = true;
+        if (checkingPortal && visible && node.element.type === 'connect_button') connect = true;
         if (visible) {
           const el = materializeElement(node) as unknown as Record<string, unknown>;
           const required = node.element.type === 'image' || node.element.type === 'logo' || node.element.type === 'video' ? 'src' : node.element.type === 'video_gate' ? 'videoUrl' : '';
@@ -271,6 +357,19 @@ export function validateDocument(value: unknown): DocumentIssue[] {
       walk(section.nodes, section, section.hidden);
     }
     for (const node of Object.values(v.flow)) if (node) walk([node], createSection(v.viewport));
+    checkingPortal = false;
+    for (const [key, surface] of Object.entries(v.screens || {})) {
+      const screen = key as GateScreenId;
+      if (!GATE_SCREENS.includes(screen) || !surface || !surface.background || !surface.backgroundMedia || !Array.isArray(surface.sections)) { error('Màn hình không hợp lệ.', device); continue; }
+      const core = surface.sections.filter(s => !s.hidden).flatMap(s => visibleNodes(s.nodes)).filter(n => n.element.type === 'flow_content');
+      if (core.length !== 1 || (core[0]?.element as FlowContentElement)?.screen !== screen) error(`${SCREEN_LABELS[screen]} cần đúng một khối chức năng.`, device);
+      for (const section of surface.sections) {
+        if (!section || !['flow', 'freeform'].includes(section.mode) || !Array.isArray(section.nodes) || ![section.width, section.height].every(n => Number.isFinite(n) && n > 0)) { error('Section không hợp lệ.', device); continue; }
+        if (flattenNodes(section.nodes).some(n => GATE_SCREENS.includes(n.element.type as GateScreenId))) error('Không được lồng gate trong màn hình phụ.', device);
+        walk(section.nodes, section, section.hidden || !flowNode(v, screen)?.element.enabled);
+      }
+      for (const ref of Object.values(surface.backgroundMedia)) if (!validMediaRef(ref)) error('Media nền màn hình không hợp lệ.', device);
+    }
     for (const ref of Object.values(v.backgroundMedia)) if (!validMediaRef(ref)) error('Ảnh nền không hợp lệ.', device);
     if (!connect) error('Thiết bị cần ít nhất một nút kết nối đang hiển thị.', device);
   }

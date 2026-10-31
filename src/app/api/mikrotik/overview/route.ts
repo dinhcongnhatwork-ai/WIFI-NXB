@@ -1,11 +1,12 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { createMikrotikClientFromRequest } from '@/lib/mikrotik';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   try {
-    const client = createMikrotikClientFromRequest(req);
+    const client = await createMikrotikClientFromRequest(req);
     const data = await client.getOverview();
 
     return NextResponse.json({ success: true, data });
@@ -19,3 +20,5 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);

@@ -1,11 +1,13 @@
+import { legacyMutation } from '@/lib/network/legacy-mutation';
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { createMikrotikClientFromRequest } from '@/lib/mikrotik';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   try {
-    const client = createMikrotikClientFromRequest(req);
+    const client = await createMikrotikClientFromRequest(req);
     const data = await client.getInterfaces();
 
     return NextResponse.json({ success: true, data });
@@ -20,7 +22,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     const body = await req.json();
     const { action, id } = body as { action?: string; id?: string };
@@ -29,7 +31,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'Thiếu interface id' }, { status: 400 });
     }
 
-    const client = createMikrotikClientFromRequest(req);
+    const client = await createMikrotikClientFromRequest(req);
 
     let result = false;
     if (action === 'enable') {
@@ -51,3 +53,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);
+export const POST = withPermission('operate', legacyMutation('MIKROTIK', handlePOST, handleGET));

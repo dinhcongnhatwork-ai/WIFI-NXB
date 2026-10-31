@@ -1,28 +1,31 @@
 # ===========================================
-# WiFi Marketing Platform - Environment Config
+# WiFi Marketing Platform - Environment Config (Remote 100.122.50.90)
 # ===========================================
 
 # Public domain and ports
-APP_DOMAIN=wifi.jtsc.vn
+APP_DOMAIN=solutionai.com.vn
 FRONTEND_PORT=3000
 BACKEND_PORT=3001
 BACKEND_URL=http://127.0.0.1:3001
 
-# Database (PostgreSQL)
-DATABASE_URL="postgresql://postgres:jtsc12345@192.168.1.90:5432/wifimarketing?schema=public"
+# PostgreSQL
+POSTGRES_DB=wifimarketing
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=jtsc12345
+DATABASE_URL="postgresql://postgres:jtsc12345@127.0.0.1:5432/wifimarketing?schema=public"
 
 # Redis
-REDIS_URL="redis://localhost:6379"
+REDIS_URL="redis://127.0.0.1:6379"
 
 # MinIO (S3-compatible storage)
-MINIO_ENDPOINT="http://192.168.1.93:9000"
-MINIO_PUBLIC_URL="http://192.168.1.93:9000"
+MINIO_ENDPOINT="http://127.0.0.1:9000"
+MINIO_PUBLIC_URL="http://100.122.50.90:9000"
 MINIO_ACCESS_KEY=jtsc
 MINIO_SECRET_KEY=jtsc12345
 MINIO_BUCKET=wifimarketing
 
 # JWT Authentication
-JWT_SECRET="10122002"
+JWT_SECRET=VJ-A1AhfA1D4bzqmToHVoT_-maxGLlDKsWcZ1k0Oq-eF9m_nz0Gz8Dc__xgIzuL9
 
 # ===========================================
 # MikroTik RouterOS Configuration
@@ -33,20 +36,27 @@ MIKROTIK_PASSWORD=10122002
 MIKROTIK_TIMEOUT_MS=12000
 MIKROTIK_ALLOW_INSECURE=true
 HOTSPOT_DNS_NAME=hotspot.wifi
-
-# Backward compatibility (old key)
 MIKROTIK_IP=192.168.1.200
 
 # Next.js
-NEXT_PUBLIC_APP_URL=https://wifi.jtsc.vn
-NEXT_PUBLIC_API_URL=https://wifi.jtsc.vn
+NEXT_PUBLIC_APP_URL=https://solutionai.com.vn
+NEXT_PUBLIC_API_URL=https://solutionai.com.vn
 
 # ===========================================
 # UniFi Controller Configuration
 # ===========================================
-# Default: https://viettuans.synology.me:8443
-UNIFI_CONTROLLER_URL=https://viettuans.synology.me:8443
-UNIFI_USERNAME=itnxb
-UNIFI_PASSWORD=123456
-UNIFI_SITE=m5npy6bn
+UNIFI_CONTROLLER_URL=https://192.168.1.200:11443
+UNIFI_USERNAME=congnhat
+UNIFI_PASSWORD=Congnhat2002@
+UNIFI_SITE=default
 
+# Device credentials encryption
+NETWORK_CREDENTIALS_KEY=2ab4129ef0867e0f45d2201d423a2263db26a46f83425a4f46140928064372a9
+
+ZABBIX_DB_PASSWORD=gHXFjagTXp2VUe9pWagHEdIJrJScFdPlFWlIPPpS4n0
+ZABBIX_SERVICE_PASSWORD=JNmoJHfmhEc6jQY2awZuj4_hUsO0MenRRLbS4kz5GFI
+ZABBIX_BOOTSTRAP_ADMIN_PASSWORD=UGyJcpivgYuGEffFAucrTCN3Aciwy0XlcbkmJddohfQ
+ZABBIX_API_URL=http://127.0.0.1:8088/api_jsonrpc.php
+MIKROTIK_IMPORT_LEGACY=false
+MONITOR_PROCESS_ENABLED=true
+ZABBIX_API_TOKEN=341701efe67237698c1eab724ce01ab21ea4a7c697354b0378541e981f853228

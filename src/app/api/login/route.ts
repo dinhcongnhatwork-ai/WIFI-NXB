@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isVideoWatched } from '@/lib/redis';
-import { createMikrotikClientFromRequest } from '@/lib/mikrotik';
+import { hasPublishedGate, parseDevice, PortalContextError, requiresSignedPortalSession, resolvePortalAccess } from '@/lib/attendance/runtime';
 import { normalizeRedirectUrl, resolvePortalFallbackUrl } from '@/lib/redirect-url';
+
+export const dynamic = 'force-dynamic';
 
 function normalizeHostValue(value: string | undefined): string {
   if (!value) {
@@ -146,7 +148,7 @@ export async function POST(req: NextRequest) {
       body?.linkLoginOnly
     );
     const campaignId = firstString(body?.campaignId, body?.['campaign-id']);
-    const sessionId = firstString(body?.sessionId);
+    const portalSessionId = firstString(body?.portalSessionId, body?.sessionId);
     const requestRedirectUrl = normalizeRedirectUrl(firstString(body?.redirectUrl));
 
     if (!mac && !trial && !linkLogin) {
@@ -159,52 +161,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Find campaign by SSID
-    const now = new Date();
-    let campaign = campaignId
-      ? await prisma.campaign.findFirst({
-          where: {
-            id: campaignId,
-            active: true,
-            startTime: { lte: now },
-            endTime: { gte: now },
-          },
-          include: { template: true },
-        })
-      : null;
-
-    if (!campaign && ssid) {
-      campaign = await prisma.campaign.findFirst({
-        where: {
-          ssid,
-          active: true,
-          startTime: { lte: now },
-          endTime: { gte: now },
-        },
-        include: { template: true },
-      });
-    }
-
-    // Check if template has video_gate
-    if (campaign?.template?.layoutJson) {
-      const layout = campaign.template.layoutJson as {
-        children?: Array<{ type: string }>;
-        elements?: Array<{ type: string; enabled?: boolean }>;
-      };
-      const hasVideoGateLegacy = layout.children?.some((c) => c.type === 'video_gate');
-      const hasVideoGateTemplate = layout.elements?.some(
-        (c) => c.type === 'video_gate' && c.enabled !== false
-      );
-      const hasVideoGate = !!(hasVideoGateLegacy || hasVideoGateTemplate);
-      if (hasVideoGate && sessionId) {
-        const watched = await isVideoWatched(`${sessionId}:${mac || 'unknown-client'}`);
-        if (!watched) {
-          return NextResponse.json(
-            { success: false, error: 'Video not watched' },
-            { status: 403 }
-          );
-        }
+    if (!portalSessionId && !ssid) return NextResponse.json({ success: false, error: 'Signed portal session required' }, { status: 403 });
+    const device = body?.device ? parseDevice(body.device) : undefined;
+    const runtime = await resolvePortalAccess(prisma, { ssid, mac, device, apMac: firstString(body?.apMac, body?.['ap-mac']), campaignId }, portalSessionId);
+    if (!runtime) return NextResponse.json({ success: false, error: 'Invalid or expired portal session' }, { status: 400 });
+    if (!runtime.effectiveTemplateId) return NextResponse.json({ success: false, error: 'No published portal is configured for this network' }, { status: 403 });
+    if (runtime.attendanceAmbiguous) return NextResponse.json({ success: false, error: 'Attendance network context is ambiguous' }, { status: 403 });
+    if (!portalSessionId && requiresSignedPortalSession(runtime)) return NextResponse.json({ success: false, error: 'Signed portal session required' }, { status: 403 });
+    const campaign = runtime.campaign;
+    if (hasPublishedGate(runtime.layout, 'video_gate', runtime.device)) {
+      if (!portalSessionId || !(await isVideoWatched(`${runtime.portalSessionId}:${mac.toLowerCase().replace(/-/g, ':') || 'unknown-client'}`))) {
+        return NextResponse.json({ success: false, error: 'Video not watched' }, { status: 403 });
       }
+    }
+    if (runtime.attendanceSession && hasPublishedGate(runtime.layout, 'attendance_gate', runtime.device) && !runtime.isAlreadyRegistered) {
+      return NextResponse.json({ success: false, error: 'Attendance registration required' }, { status: 403 });
     }
 
     // Upsert wifi user
@@ -262,6 +233,7 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
+    if (error instanceof PortalContextError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     console.error('Login error:', error);
     return NextResponse.json(
       { success: false, error: 'Login failed' },

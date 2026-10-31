@@ -1,3 +1,4 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { runAttendanceMonitorTick } from '@/lib/attendance/monitor';
@@ -6,7 +7,7 @@ import Redis from 'ioredis';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -175,3 +176,5 @@ export async function GET(
     },
   });
 }
+
+export const GET = withPermission('read', handleGET);

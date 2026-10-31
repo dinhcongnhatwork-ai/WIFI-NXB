@@ -1,0 +1,23 @@
+$(if http-status == 302)Hotspot login successful$(endif)
+$(if http-header == "Location")$(link-redirect)$(endif)
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Đã kết nối Internet</title>
+<meta http-equiv="refresh" content="1; url=$(link-redirect)">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="-1">
+<script>
+window.location.replace("$(link-redirect)");
+</script>
+</head>
+<body style="font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:40px 16px;background:#f8fafc;color:#1e293b;">
+<h2>Đã kết nối Internet thành công!</h2>
+<p style="color:#64748b;">Đang chuyển tiếp đến trang web...</p>
+<p style="margin-top:24px;">
+<a href="$(link-redirect)" style="display:inline-block;padding:10px 20px;background:#10b981;color:#fff;text-decoration:none;border-radius:6px;font-weight:500;">Bấm vào đây để tiếp tục</a>
+</p>
+</body>
+</html>

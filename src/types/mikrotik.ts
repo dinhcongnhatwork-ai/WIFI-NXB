@@ -19,11 +19,29 @@ export interface MikrotikSystemResource {
   totalMemory?: number;
   cpuLoad?: number;
   cpuCount?: number;
+  cpuFrequency?: number;
   freeHddSpace?: number;
   totalHddSpace?: number;
   architectureName?: string;
   boardName?: string;
   platform?: string;
+}
+
+export interface MikrotikRouterboard {
+  routerboard?: boolean;
+  model?: string;
+  serialNumber?: string;
+  currentFirmware?: string;
+  upgradeFirmware?: string;
+  firmwareType?: string;
+  revision?: string;
+}
+
+export interface MikrotikSystemLog {
+  id: string;
+  time: string;
+  topics: string;
+  message: string;
 }
 
 export interface MikrotikInterface {
@@ -38,7 +56,12 @@ export interface MikrotikInterface {
   comment?: string;
   rxByte?: number;
   txByte?: number;
+  rxPacket?: number;
+  txPacket?: number;
+  rxError?: number;
+  txError?: number;
   lastLinkUpTime?: string;
+  linkDowns?: number;
 }
 
 export interface MikrotikIpAddress {
@@ -67,17 +90,42 @@ export interface MikrotikDhcpLease {
   hostName?: string;
   server?: string;
   status?: string;
+  expiresAfter?: string;
   dynamic: boolean;
   blocked: boolean;
   disabled: boolean;
+  comment?: string;
+}
+
+export interface MikrotikArpEntry {
+  id: string;
+  address: string;
+  macAddress?: string;
+  interface: string;
+  dynamic: boolean;
+  complete: boolean;
+  disabled: boolean;
+  comment?: string;
+}
+
+export interface MikrotikIpPool {
+  id: string;
+  name: string;
+  ranges: string;
+  total?: number;
+  used?: number;
+  available?: number;
 }
 
 export interface MikrotikIpBinding {
   id: string;
   macAddress?: string;
   address?: string;
-  type?: string;
+  toAddress?: string;
+  server?: string;
+  type?: 'regular' | 'bypassed' | 'blocked' | string;
   comment?: string;
+  disabled?: boolean;
 }
 
 export interface MikrotikRoute {
@@ -85,9 +133,11 @@ export interface MikrotikRoute {
   dstAddress?: string;
   gateway?: string;
   distance?: number;
+  routingTable?: string;
   active: boolean;
   dynamic: boolean;
   disabled: boolean;
+  comment?: string;
 }
 
 export interface MikrotikFirewallRule {
@@ -101,9 +151,57 @@ export interface MikrotikFirewallRule {
   dstPort?: string;
   inInterface?: string;
   outInterface?: string;
+  bytes?: number;
+  packets?: number;
   comment?: string;
   disabled: boolean;
   dynamic: boolean;
+}
+
+export interface MikrotikNatRule {
+  id: string;
+  chain: string;
+  action: string;
+  toAddresses?: string;
+  toPorts?: string;
+  srcAddress?: string;
+  dstAddress?: string;
+  protocol?: string;
+  srcPort?: string;
+  dstPort?: string;
+  outInterface?: string;
+  inInterface?: string;
+  bytes?: number;
+  packets?: number;
+  comment?: string;
+  disabled: boolean;
+  dynamic: boolean;
+}
+
+export interface MikrotikAddressList {
+  id: string;
+  list: string;
+  address: string;
+  timeout?: string;
+  creationTime?: string;
+  comment?: string;
+  disabled: boolean;
+  dynamic: boolean;
+}
+
+export interface MikrotikSimpleQueue {
+  id: string;
+  name: string;
+  target?: string;
+  maxLimit?: string;
+  limitAt?: string;
+  priority?: string;
+  bytes?: string;
+  totalBytes?: number;
+  rate?: string;
+  comment?: string;
+  disabled: boolean;
+  dynamic?: boolean;
 }
 
 export interface MikrotikHotspotProfile {
@@ -112,6 +210,17 @@ export interface MikrotikHotspotProfile {
   dnsName?: string;
   htmlDirectory?: string;
   loginBy?: string;
+  idleTimeout?: string;
+  keepaliveTimeout?: string;
+  statusAutorefresh?: string;
+}
+
+export interface MikrotikHotspotUserProfile {
+  id: string;
+  name: string;
+  rateLimit?: string;
+  sharedUsers?: number | string;
+  sessionTimeout?: string;
   idleTimeout?: string;
   keepaliveTimeout?: string;
   statusAutorefresh?: string;
@@ -135,6 +244,7 @@ export interface MikrotikHotspotUser {
   profile?: string;
   server?: string;
   limitUptime?: string;
+  limitBytesTotal?: number;
   comment?: string;
   disabled: boolean;
 }
@@ -150,6 +260,8 @@ export interface MikrotikHotspotActiveSession {
   idleTime?: string;
   bytesIn?: number;
   bytesOut?: number;
+  packetsIn?: number;
+  packetsOut?: number;
 }
 
 export interface MikrotikHotspotCookie {
@@ -163,6 +275,7 @@ export interface MikrotikHotspotCookie {
 export interface MikrotikOverview {
   identity: MikrotikSystemIdentity | null;
   resource: MikrotikSystemResource | null;
+  routerboard?: MikrotikRouterboard | null;
   interfaces: MikrotikInterface[];
   addresses: MikrotikIpAddress[];
   dhcpServers: MikrotikDhcpServer[];
@@ -171,6 +284,7 @@ export interface MikrotikOverview {
   hotspotUsers: MikrotikHotspotUser[];
   hotspotActive: MikrotikHotspotActiveSession[];
   firewallRules: MikrotikFirewallRule[];
+  natRules?: MikrotikNatRule[];
   routes: MikrotikRoute[];
   connection: MikrotikConnectionInfo;
 }

@@ -1,10 +1,12 @@
+import { legacyMutation } from '@/lib/network/legacy-mutation';
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { getUnifiClientFromRequest } from '@/lib/settings';
 import { UnifiWlanConf } from '@/types/unifi';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   try {
     const client = await getUnifiClientFromRequest(req);
     await client.login();
@@ -28,7 +30,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     const client = await getUnifiClientFromRequest(req);
     await client.login();
@@ -79,3 +81,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);
+export const POST = withPermission('operate', legacyMutation('UNIFI', handlePOST, handleGET));

@@ -1,77 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getUnifiConfig, getMikrotikConfig, saveSystemSetting } from '@/lib/settings';
-
-export const dynamic = 'force-dynamic';
-
-export async function GET() {
-  try {
-    const [unifi, mikrotik] = await Promise.all([
-      getUnifiConfig(),
-      getMikrotikConfig(),
-    ]);
-
-    return NextResponse.json({
-      success: true,
-      data: {
-        unifi: {
-          controllerUrl: unifi.controllerUrl,
-          username: unifi.username,
-          hasPassword: Boolean(unifi.password),
-          site: unifi.site,
-        },
-        mikrotik: {
-          host: mikrotik.host,
-          port: mikrotik.port,
-          username: mikrotik.username,
-          hasPassword: Boolean(mikrotik.password),
-          allowInsecure: mikrotik.allowInsecure,
-        },
-      },
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Failed to load settings' },
-      { status: 500 }
-    );
-  }
-}
-
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const { unifi, mikrotik } = body;
-
-    if (unifi) {
-      const current = await getUnifiConfig();
-      const updated = {
-        controllerUrl: (unifi.controllerUrl || current.controllerUrl || '').trim(),
-        username: (unifi.username || current.username || '').trim(),
-        password: unifi.password ? String(unifi.password).trim() : current.password,
-        site: (unifi.site || current.site || 'default').trim(),
-      };
-      await saveSystemSetting('unifi', updated);
-    }
-
-    if (mikrotik) {
-      const current = await getMikrotikConfig();
-      const updated = {
-        host: (mikrotik.host || current.host || '').trim(),
-        port: Number(mikrotik.port) || current.port || 80,
-        username: (mikrotik.username || current.username || '').trim(),
-        password: mikrotik.password ? String(mikrotik.password).trim() : current.password,
-        allowInsecure: mikrotik.allowInsecure !== undefined ? Boolean(mikrotik.allowInsecure) : current.allowInsecure,
-      };
-      await saveSystemSetting('mikrotik', updated);
-    }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Cài đặt hệ thống đã được lưu thành công và áp dụng ngay lập tức!',
-    });
-  } catch (error) {
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Failed to save settings' },
-      { status: 500 }
-    );
-  }
-}
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+import { withPermission,AccessError } from '@/lib/api-access';
+import { publicConnection } from '@/lib/network/connections';
+export const dynamic='force-dynamic';
+export const GET=withPermission('admin',async()=>{
+ const rows=await prisma.networkConnection.findMany({orderBy:{name:'asc'}});
+ return NextResponse.json({success:true,data:{connections:rows.map(publicConnection),monitoring:{configured:Boolean(process.env.ZABBIX_API_URL&&process.env.ZABBIX_API_TOKEN),endpoint:process.env.ZABBIX_API_URL||null,collectorIntervalSeconds:30},encryptionConfigured:/^[a-f\d]{64}$/i.test(process.env.NETWORK_CREDENTIALS_KEY||'')}});
+});
+export const POST=withPermission('admin',async()=>{throw new AccessError(400,'Lưu cấu hình thiết bị tại /api/network/connections.');});

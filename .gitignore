@@ -32,7 +32,12 @@ next-env.d.ts
 prisma/migrations/*
 !prisma/migrations/20260909000000_existing_schema_baseline/
 !prisma/migrations/20260909120000_template_revisions/
+!prisma/migrations/20261013000000_attendance_schema_baseline/
+!prisma/migrations/20261013141000_attendance_direct_template/
+!prisma/migrations/20261021140000_network_monitoring/
 !prisma/migrations/migration_lock.toml
 
 
 .agents/
+# Local verification artifacts
+.tmp/

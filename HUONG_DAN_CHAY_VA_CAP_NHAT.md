@@ -17,8 +17,8 @@ Lenh nay se build va khoi dong:
 
 ### Kiem tra trang web
 
-- Trang quan tri: https://wifi.jtsc.vn/admin
-- Thu vien media: https://wifi.jtsc.vn/admin/media
+- Trang quan tri: https://solutionai.com.vn/admin
+- Thu vien media: https://solutionai.com.vn/admin/media
 
 ## 2) Khi sua code va can apply code moi len he thong
 
@@ -67,7 +67,7 @@ docker exec wifi-marketing-backend npm run db:push
 ## 6) Kiem tra nhanh API dang nhap
 
 ```bash
-curl -i -X POST https://wifi.jtsc.vn/api/auth/login \
+curl -i -X POST https://solutionai.com.vn/api/auth/login \
   -H 'Content-Type: application/json' \
   -d '{"username":"admin","password":"admin123"}'
 ```

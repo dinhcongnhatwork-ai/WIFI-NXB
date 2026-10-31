@@ -1,97 +1,107 @@
-# 2026-09-08 10:26:38 by RouterOS 7.21
-# software id = JAUG-HGCP
+# 2026-10-25 11:22:03 by RouterOS 7.24.5
+# software id = 7RIL-5U17
 #
-/interface ethernet
-set [ find default-name=ether1 ] disable-running-check=no
-set [ find default-name=ether2 ] disable-running-check=no
-/interface list
-add name=WAN
-add name=LAN
+# model = CCR2004-16G-2S+
+# serial number = HMM0B2H5QEN
+/interface bridge
+add admin-mac=D0:EA:11:CC:55:E9 auto-mac=no comment=defconf name=bridge-wifi
 /ip hotspot profile
-set [ find default=yes ] dns-name=hotspot.wifi hotspot-address=10.10.20.1 \
-    login-by=cookie,http-chap,http-pap,trial
-/ip pool
-add name=dhcp ranges=10.10.20.2-10.10.20.254
-add name=dhcp_pool1 ranges=10.10.20.2-10.10.23.254
-add name=dhcp_pool2 ranges=10.10.20.2-10.10.20.254
-/ip dhcp-server
-add address-pool=dhcp_pool1 interface=ether2 name=dhcp1
+set [ find default=yes ] dns-name=hotspot.wifi hotspot-address=10.10.1.2 \
+    html-directory=hotspot_default login-by=cookie,http-chap,http-pap,trial
 /ip hotspot user profile
-set [ find default=yes ] address-pool=dhcp
-add address-pool=dhcp idle-timeout=30m keepalive-timeout=5m name=uprof1 \
-    shared-users=3
+set [ find default=yes ] idle-timeout=30m keepalive-timeout=5m shared-users=5
+add idle-timeout=30m keepalive-timeout=5m name=uprof1 shared-users=5
 /ip hotspot profile
-add dns-name=hotspot.wifi hotspot-address=10.10.20.1 login-by=\
-    cookie,http-chap,trial name=hsprof1 trial-uptime-limit=4h \
+add dns-name=hotspot.wifi hotspot-address=10.10.1.2 login-by=\
+    cookie,http-chap,http-pap,trial name=hsprof1 trial-uptime-limit=4h \
     trial-user-profile=uprof1
-/ip hotspot
-add address-pool=dhcp_pool1 disabled=no interface=ether2 name=server1 \
-    profile=hsprof1
-/interface list member
-add interface=ether1 list=WAN
-add interface=ether2 list=LAN
+/ip pool
+add name=dhcp_pool0 ranges=10.10.1.10-10.10.1.240
+add name=pool-lan ranges=10.10.1.100-10.10.1.250
+/ip dhcp-server
+add address-pool=dhcp_pool0 interface=bridge-wifi name=dhcp1
+/interface bridge port
+add bridge=bridge-wifi comment=defconf interface=ether15
+add bridge=bridge-wifi interface=ether2
+add bridge=bridge-wifi interface=ether4
+add bridge=bridge-wifi interface=ether5
+add bridge=bridge-wifi interface=ether6
+add bridge=bridge-wifi interface=ether3
+add bridge=bridge-wifi interface=ether7
+add bridge=bridge-wifi interface=ether8
+add bridge=bridge-wifi interface=ether9
+add bridge=bridge-wifi interface=ether10
+add bridge=bridge-wifi interface=ether11
+add bridge=bridge-wifi interface=ether12
+add bridge=bridge-wifi interface=ether13
+add bridge=bridge-wifi interface=ether14
+add bridge=bridge-wifi interface=ether16
 /ip address
-add address=192.168.1.200/24 interface=ether1 network=192.168.1.0
-add address=10.10.20.1/22 interface=ether2 network=10.10.20.0
-/ip dhcp-client
-add disabled=yes interface=ether1
+add address=192.168.1.200/24 comment=defconf interface=ether1 network=\
+    192.168.1.0
+add address=10.10.1.2/24 interface=bridge-wifi network=10.10.1.0
+/ip dhcp-server lease
+add address=10.10.1.1 client-id=1:74:fa:29:5f:71:93 mac-address=\
+    74:FA:29:5F:71:93 server=dhcp1
+add address=10.10.1.253 client-id=1:d0:ea:11:d8:52:2c mac-address=\
+    D0:EA:11:D8:52:2C server=dhcp1
 /ip dhcp-server network
-add address=10.10.20.0/22 dns-server=8.8.8.8,8.8.4.4 gateway=10.10.20.1
+add address=10.10.1.0/24 dns-server=10.10.1.2,8.8.8.8 gateway=10.10.1.2
 /ip dns
-set allow-remote-requests=yes servers=8.8.8.8,8.8.4.4
+set allow-remote-requests=yes servers=8.8.8.8,1.1.1.1
+/ip dns static
+add address=10.10.1.2 comment="Hotspot DNS" name=hotspot.wifi type=A
 /ip firewall filter
 add action=passthrough chain=unused-hs-chain comment=\
     "place hotspot rules here" disabled=yes
 /ip firewall nat
 add action=passthrough chain=unused-hs-chain comment=\
     "place hotspot rules here" disabled=yes
-add action=masquerade chain=srcnat out-interface=ether1 src-address=\
-    192.168.1.0/24
-add action=masquerade chain=srcnat comment="masquerade hotspot network" \
-    out-interface=ether1 src-address=10.10.20.0/22
-add action=dst-nat chain=dstnat comment=Unifi-OS-WebUI-11443 dst-address=\
-    192.168.1.200 dst-port=11443 protocol=tcp to-addresses=10.10.23.70 \
-    to-ports=11443
-add action=dst-nat chain=dstnat comment=Unifi-OS-WebUI-8443 dst-address=\
-    192.168.1.200 dst-port=8443 protocol=tcp to-addresses=10.10.23.70 \
-    to-ports=11443
-add action=dst-nat chain=dstnat comment=Unifi-OS-Inform-8080 dst-address=\
-    192.168.1.200 dst-port=8080 protocol=tcp to-addresses=10.10.23.70 \
-    to-ports=8080
-add action=dst-nat chain=dstnat comment=\
-    "Redirect old controller IP 10.10.1.70 to 10.10.23.70" dst-address=\
-    10.10.1.70 to-addresses=10.10.23.70
-add action=masquerade chain=srcnat comment="hairpin nat for controller" \
-    dst-address=10.10.23.70 out-interface=ether2 src-address=10.10.20.0/22
+add action=masquerade chain=srcnat comment="NAT LAN 10.10.1.0/24 to Internet" \
+    out-interface=ether1 src-address=10.10.1.0/24
+add action=masquerade chain=srcnat out-interface=ether1
+/ip hotspot
+add disabled=no interface=bridge-wifi name=server1 profile=hsprof1
 /ip hotspot ip-binding
-add address=10.10.23.70 comment=Unifi-OS-VM mac-address=BC:24:11:39:EB:78 \
+add address=10.10.1.253 comment=CRS328-Switch mac-address=D0:EA:11:D8:52:2C \
     type=bypassed
-add address=10.10.23.254 comment=UniFi-AP mac-address=70:A7:41:E8:A2:33 type=\
+add address=10.10.1.1 comment=WIFI-AP mac-address=74:FA:29:5F:71:93 type=\
     bypassed
 /ip hotspot user
-add name=admin
+add comment="Admin default user" name=admin profile=uprof1
 /ip hotspot walled-garden
 add comment="place hotspot rules here" disabled=yes
-add comment=portal-domain dst-host=wifi.jtsc.vn
-add comment=portal-domain dst-host=www.wifi.jtsc.vn
-add comment=minio-media dst-host=jtscminio.duckdns.org
-add comment=stbook-media dst-host=*.stbook.vn
+add comment=portal-domain dst-host=solutionai.com.vn
+add comment=portal-domain dst-host=www.solutionai.com.vn
+add comment=portal-domain dst-host=*.solutionai.com.vn
 add comment=stbook-media dst-host=stbook.vn
-add comment=minio-media dst-host=*.jtscminio.duckdns.org
+add comment=stbook-media dst-host=*.stbook.vn
+add comment=nxbctqg-media dst-host=nxbctqg.org.vn
 add comment=nxbctqg-media dst-host=*.nxbctqg.org.vn
-add comment=demo-media dst-host=demo.jtsc.vn
+add comment=google-fonts dst-host=fonts.googleapis.com
+add comment=google-fonts dst-host=fonts.gstatic.com
+add comment=cdnjs dst-host=cdnjs.cloudflare.com
 /ip hotspot walled-garden ip
-add action=accept comment=portal-server disabled=no dst-address=192.168.1.56
-add action=accept comment=public-ip-minio disabled=no dst-address=117.5.215.6
-add action=accept comment=portal-proxy disabled=no dst-address=192.168.1.92
-add action=accept comment=local-gateway disabled=no dst-address=10.10.20.1
+add action=accept comment=portal-server-local disabled=no dst-address=\
+    192.168.1.253
 add action=accept comment=allow-lan-192.168.1.0/24 disabled=no dst-address=\
     192.168.1.0/24
-add action=accept comment=cf-wifi-jtsc-vn disabled=no dst-address=\
-    104.21.17.181
-add action=accept comment=cf-wifi-jtsc-vn disabled=no dst-address=\
-    172.67.177.193
+add action=accept comment=local-gateway disabled=no dst-address=10.10.1.2
+add action=accept comment=cf-solutionai-1 disabled=no dst-address=\
+    104.21.51.90
+add action=accept comment=cf-solutionai-2 disabled=no dst-address=\
+    172.67.177.252
+add action=accept comment=cf-subnet-104 disabled=no dst-address=104.16.0.0/12
+add action=accept comment=cf-subnet-172 disabled=no dst-address=172.64.0.0/13
 /ip route
-add disabled=no dst-address=0.0.0.0/0 gateway=192.168.1.1
+add dst-address=0.0.0.0/0 gateway=192.168.1.1
+/ip service
+set ssh available-from=192.168.1.0/24,10.10.1.0/24
+/ip ssh
+set password-authentication=yes
+/system clock
+set time-zone-name=Asia/Bangkok
+/system routerboard settings
+set enter-setup-on=delete-key
 /tool sniffer
-set file-name=sniff.pcap filter-ip-address=10.10.20.10/32
+set filter-ip-address=10.10.1.224/32

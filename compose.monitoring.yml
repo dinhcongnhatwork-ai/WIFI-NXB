@@ -1,0 +1,107 @@
+# Use with docker-compose.yml and both .env and monitoring/images.lock.env (see docs/monitoring.md).
+services:
+  zabbix-db:
+    profiles: [monitoring]
+    image: ${MONITOR_DB_IMAGE:?Run npm run monitor:lock-images}
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:?Set a dedicated Zabbix DB password}
+    volumes: [zabbix-db:/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U zabbix -d zabbix]
+      interval: 10s
+      retries: 20
+    networks: [monitoring]
+  zabbix-server:
+    profiles: [monitoring]
+    image: ${MONITOR_ZABBIX_SERVER_IMAGE:?Run npm run monitor:lock-images}
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:?Set a dedicated Zabbix DB password}
+      ZBX_CACHESIZE: 64M
+      ZBX_HISTORYCACHESIZE: 32M
+      ZBX_VALUECACHESIZE: 32M
+      ZBX_STARTPOLLERS: 3
+      ZBX_STARTPINGERS: 1
+    ports: ['127.0.0.1:10051:10051']
+    depends_on:
+      zabbix-db: {condition: service_healthy}
+    networks: [monitoring]
+    extra_hosts: ['host.docker.internal:host-gateway']
+  zabbix-web:
+    profiles: [monitoring]
+    image: ${MONITOR_ZABBIX_WEB_IMAGE:?Run npm run monitor:lock-images}
+    restart: unless-stopped
+    mem_limit: 384m
+    environment:
+      DB_SERVER_HOST: zabbix-db
+      POSTGRES_DB: zabbix
+      POSTGRES_USER: zabbix
+      POSTGRES_PASSWORD: ${ZABBIX_DB_PASSWORD:?Set a dedicated Zabbix DB password}
+      ZBX_SERVER_HOST: zabbix-server
+      PHP_TZ: UTC
+    ports: ['127.0.0.1:8088:8080']
+    depends_on: [zabbix-server]
+    networks: [monitoring]
+  zabbix-agent2:
+    profiles: [monitoring]
+    image: ${MONITOR_ZABBIX_AGENT_IMAGE:?Run npm run monitor:lock-images}
+    restart: unless-stopped
+    mem_limit: 128m
+    network_mode: host
+    pid: host
+    tmpfs: ['/tmp', '/var/run/zabbix']
+    environment:
+      ZBX_HOSTNAME: ${MONITOR_AGENT_HOSTNAME:-wifi-marketing-host}
+      ZBX_REFRESHACTIVECHECKS: 30
+      ZBX_BUFFERSEND: 5
+      ZBX_SERVER_HOST: 127.0.0.1
+      ZBX_PASSIVE_ALLOW: 'false'
+      ZBX_ACTIVE_ALLOW: 'true'
+    volumes:
+      - /:/hostfs:ro,rslave
+  syslog-ng:
+    profiles: [monitoring]
+    image: ${MONITOR_SYSLOG_IMAGE:?Run npm run monitor:lock-images}
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - '${MONITOR_SYSLOG_BIND:-127.0.0.1}:5514:5514/udp'
+      - '${MONITOR_SYSLOG_BIND:-127.0.0.1}:5514:5514/tcp'
+    volumes:
+      - ./monitoring/syslog-ng.conf:/etc/syslog-ng/syslog-ng.conf:ro
+      - network-syslog:/var/log/network
+    networks: [monitoring]
+  monitor-collector:
+    profiles: [monitoring]
+    build: {context: ., dockerfile: Dockerfile}
+    restart: unless-stopped
+    mem_limit: 384m
+    network_mode: host
+    env_file: [.env]
+    environment:
+      APP_SERVER_MODE: collector
+      ZABBIX_API_URL: http://127.0.0.1:8088/api_jsonrpc.php
+      MONITOR_SYSLOG_PATH: /var/log/network/devices.ndjson
+    command: [npm, run, 'monitor:collector']
+    volumes: [network-syslog:/var/log/network:ro]
+    depends_on: [zabbix-web, syslog-ng, postgres, redis]
+  monitor-retention:
+    profiles: [monitoring-maintenance]
+    build: {context: ., dockerfile: Dockerfile}
+    mem_limit: 192m
+    network_mode: host
+    env_file: [.env]
+    command: [npm, run, 'monitor:retention']
+networks:
+  monitoring: {}
+volumes:
+  zabbix-db: {}
+  network-syslog: {}

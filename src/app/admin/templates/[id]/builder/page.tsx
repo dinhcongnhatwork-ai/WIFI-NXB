@@ -6,6 +6,8 @@ import dynamic from 'next/dynamic';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
+import Link from 'next/link';
+import DocumentRenderer from '@/components/renderer/DocumentRenderer';
 import {
   toDocument,
   isTemplateDocumentV2,
@@ -41,7 +43,7 @@ interface TemplateData {
 
 export default function BuilderPage() {
   const { id } = useParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, canOperate } = useAuth();
   const router = useRouter();
   const [template, setTemplate] = useState<TemplateData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -74,15 +76,15 @@ export default function BuilderPage() {
   // Convert template layout to TemplateDocumentV2
   let documentV2: TemplateDocumentV2;
   try {
-    if (isTemplateDocumentV2(template.layoutJson)) {
-      documentV2 = template.layoutJson;
-    } else {
-      documentV2 = toDocument(template.layoutJson);
-    }
+    documentV2 = toDocument(template.layoutJson);
   } catch (err) {
-    console.warn('Lỗi parse template cũ, sử dụng template mặc định:', err);
-    documentV2 = createDocument();
+    return <div className="p-8"><p role="alert" className="text-rose-700">{err instanceof Error ? err.message : 'Không thể mở mẫu. Dữ liệu gốc được giữ nguyên.'}</p><button className="mt-4 text-blue-600" onClick={() => router.push('/admin/templates')}>Trở lại danh sách mẫu</button></div>;
   }
+
+  if (!canOperate) return <div className="space-y-4">
+    <div className="admin-panel-heading"><h1>{template.name}</h1><Link href={`/admin/templates/${id}/preview`}>Xem trước đầy đủ</Link></div>
+    <DocumentRenderer document={documentV2} mode="edit" />
+  </div>;
 
   return (
     <CmsBuilder

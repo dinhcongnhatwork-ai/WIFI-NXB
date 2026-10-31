@@ -1,19 +1,25 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { UnifiClient } from '@/lib/unifi';
+import { lockAttendanceSchedules, lockAttendanceSession } from '@/lib/attendance/locking';
+import { getUnifiClientFromRequest } from '@/lib/settings';
+import { authenticateRequest } from '@/lib/auth';
+import { AttendanceInputError, validateSessionInput, validateSessionRelations } from '@/lib/attendance/session-validation';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  if (!authenticateRequest(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const { id } = params;
 
     const session = await prisma.attendanceSession.findUnique({
       where: { id },
       include: {
+        template: { select: { id: true, name: true } },
         campaign: { select: { id: true, name: true, ssid: true } },
         registrations: {
           orderBy: { createdAt: 'desc' },
@@ -52,7 +58,8 @@ export async function GET(
       : [];
 
     try {
-      const client = new UnifiClient();
+      const url=new URL(req.url);url.searchParams.set('siteId',session.unifiSite||'default');
+      const client = await getUnifiClientFromRequest(new Request(url));
       await client.login();
       const devices = await client.getDevices();
 
@@ -81,6 +88,8 @@ export async function GET(
 
     const data = {
       ...session,
+      templateName: session.template?.name || null,
+      campaignName: session.campaign?.name || null,
       targetAps,
       stats: {
         totalRegistered: session.registrations.length,
@@ -104,120 +113,41 @@ export async function GET(
   }
 }
 
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
+async function handlePATCH(req: NextRequest, { params }: { params: { id: string } }) {
+  if (!authenticateRequest(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
-    const { id } = params;
     const body = await req.json();
-
-    const current = await prisma.attendanceSession.findUnique({
-      where: { id },
-      include: {
-        registrations: {
-          include: {
-            intervals: {
-              where: { leftAt: null },
-            },
-          },
-        },
-      },
-    });
-
-    if (!current) {
-      return NextResponse.json(
-        { success: false, error: 'Không tìm thấy buổi điểm danh.' },
-        { status: 404 }
-      );
-    }
-
-    const now = new Date();
-    const updateData: any = {};
-
-    if (body.name !== undefined) updateData.name = body.name.trim();
-    if (body.location !== undefined) updateData.location = body.location?.trim() || null;
-    if (body.ssid !== undefined) updateData.ssid = body.ssid.trim();
-    if (body.targetApMacs !== undefined) {
-      updateData.targetApMacs = Array.isArray(body.targetApMacs)
-        ? body.targetApMacs.map((m: string) => m.toLowerCase().trim())
-        : [];
-    }
-    if (body.formSchema !== undefined) updateData.formSchema = body.formSchema;
-    if (body.dialogTitle !== undefined) updateData.dialogTitle = body.dialogTitle.trim();
-    if (body.dialogDescription !== undefined) updateData.dialogDescription = body.dialogDescription?.trim() || null;
-    if (body.confirmButtonText !== undefined) updateData.confirmButtonText = body.confirmButtonText.trim();
-    if (body.successMessage !== undefined) updateData.successMessage = body.successMessage.trim();
-    if (body.warningThresholdMinutes !== undefined) {
-      updateData.warningThresholdMinutes = Number(body.warningThresholdMinutes) || 15;
-    }
-    if (body.startTime !== undefined) updateData.startTime = new Date(body.startTime);
-    if (body.endTime !== undefined) updateData.endTime = new Date(body.endTime);
-
-    // Status transition handling
-    if (body.status && body.status !== current.status) {
-      updateData.status = body.status;
-
-      if (body.status === 'ENDED') {
-        updateData.endedAt = now;
-
-        // Close all open intervals
-        for (const reg of current.registrations) {
-          for (const openInt of reg.intervals) {
-            const duration = Math.max(
-              1,
-              Math.floor((now.getTime() - new Date(openInt.joinedAt).getTime()) / 1000)
-            );
-            await prisma.attendanceInterval.update({
-              where: { id: openInt.id },
-              data: {
-                leftAt: now,
-                durationSeconds: duration,
-              },
-            });
-          }
+    const updated = await prisma.$transaction(async tx => {
+      await lockAttendanceSession(tx, params.id);
+      const current = await tx.attendanceSession.findUnique({ where: { id: params.id }, include: { registrations: { include: { intervals: { where: { leftAt: null } } } } } });
+      if (!current) throw new AttendanceInputError('Không tìm thấy buổi điểm danh.', 404);
+      const data = validateSessionInput(body, current);
+      await lockAttendanceSchedules(tx, [current, data]);
+      await validateSessionRelations(tx, data, current);
+      const now = new Date();
+      if (data.status === 'ENDED' && current.status !== 'ENDED') {
+        for (const registration of current.registrations) for (const interval of registration.intervals) {
+          await tx.attendanceInterval.update({ where: { id: interval.id }, data: { leftAt: now, durationSeconds: Math.max(0, Math.floor((now.getTime() - interval.joinedAt.getTime()) / 1000)) } });
         }
-
-        // Log session end
-        await prisma.attendanceLog.create({
-          data: {
-            sessionId: id,
-            type: 'SESSION_END',
-            message: `Buổi họp đã kết thúc và chốt dữ liệu báo cáo lúc ${now.toLocaleTimeString('vi-VN')}.`,
-            createdAt: now,
-          },
-        });
-      } else if (body.status === 'ACTIVE') {
-        await prisma.attendanceLog.create({
-          data: {
-            sessionId: id,
-            type: 'SESSION_START',
-            message: `Buổi họp được kích hoạt chế độ giám sát trực tiếp.`,
-            createdAt: now,
-          },
-        });
+        await tx.attendanceLog.create({ data: { sessionId: current.id, type: 'SESSION_END', message: 'Buổi họp đã kết thúc và chốt dữ liệu báo cáo.', createdAt: now } });
+      } else if (data.status === 'ACTIVE' && current.status !== 'ACTIVE') {
+        await tx.attendanceLog.create({ data: { sessionId: current.id, type: 'SESSION_START', message: 'Buổi họp được kích hoạt chế độ giám sát trực tiếp.', createdAt: now } });
       }
-    }
-
-    const updated = await prisma.attendanceSession.update({
-      where: { id },
-      data: updateData,
-    });
-
+      return tx.attendanceSession.update({ where: { id: current.id }, data: { ...data, ...(data.status === 'ENDED' && current.status !== 'ENDED' ? { endedAt: now } : {}) } });
+    }, { isolationLevel: 'ReadCommitted' });
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
+    if (error instanceof AttendanceInputError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     console.error('[api/attendance/sessions/[id] PATCH] Error:', error);
-    return NextResponse.json(
-      { success: false, error: error instanceof Error ? error.message : 'Internal server error' },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: 'Không thể lưu buổi điểm danh. Vui lòng thử lại.' }, { status: 500 });
   }
 }
 
-export async function DELETE(
+async function handleDELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  if (!authenticateRequest(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const { id } = params;
     await prisma.attendanceSession.delete({
@@ -233,3 +163,9 @@ export async function DELETE(
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);
+
+export const PATCH = withPermission('operate', handlePATCH);
+
+export const DELETE = withPermission('operate', handleDELETE);

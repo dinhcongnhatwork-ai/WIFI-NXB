@@ -1,6 +1,7 @@
 import { prisma } from '@/lib/prisma';
 import { UnifiClient } from '@/lib/unifi';
-import { MikrotikClient } from '@/lib/mikrotik';
+import { createMikrotikClientFromRequest } from '@/lib/mikrotik';
+import { getUnifiConfig } from '@/lib/settings';
 import Redis from 'ioredis';
 import {
   evaluateRegistrationState,
@@ -75,28 +76,26 @@ export async function runAttendanceMonitorTick(): Promise<{
     };
   }
 
-  // Connect to UniFi Controller
-  let unifiClient: UnifiClient | null = null;
-  let rawClients: any[] = [];
-  let rawDevices: any[] = [];
-  let isControllerHealthy = true;
-
-  try {
-    unifiClient = new UnifiClient();
-    await unifiClient.login();
-    [rawClients, rawDevices] = await Promise.all([
-      unifiClient.getClients(),
-      unifiClient.getDevices().catch(() => []),
-    ]);
-  } catch (err) {
-    console.error('[attendance-monitor] UniFi Controller fetch error:', err);
-    isControllerHealthy = false;
+  // Fetch each configured meeting site independently; a failed source never counts as absence.
+  const observations=new Map<string,{rawClients:any[];rawDevices:any[];healthy:boolean}>();
+  const sites=Array.from(new Set(activeSessions.map(session=>session.unifiSite||'default')));
+  for(const site of sites){
+    try{
+      const config=await getUnifiConfig();
+      const client=new UnifiClient({...config,site});
+      await client.login();
+      const [rawClients,rawDevices]=await Promise.all([client.getClients(),client.getDevices()]);
+      observations.set(site,{rawClients,rawDevices,healthy:true});
+    }catch(err){console.error('[attendance-monitor] UniFi site fetch error:',site,err);observations.set(site,{rawClients:[],rawDevices:[],healthy:false});}
   }
 
   let totalProcessedRegistrations = 0;
   let totalUnregistered = 0;
 
   for (const session of activeSessions) {
+    const observation=observations.get(session.unifiSite||'default');
+    const rawClients=observation?.rawClients||[],rawDevices=observation?.rawDevices||[];
+    const isControllerHealthy=observation?.healthy===true;
     const targetApMacs = Array.isArray(session.targetApMacs)
       ? (session.targetApMacs as string[]).map((m) => m.toLowerCase().trim())
       : [];
@@ -287,7 +286,7 @@ export async function runAttendanceMonitorTick(): Promise<{
       // MikroTik Integration: Automatically remove DHCP IP Lease when user disconnects / leaves room
       if (result.isNewlyDisconnected) {
         try {
-          const mikrotikClient = new MikrotikClient();
+          const mikrotikClient = await createMikrotikClientFromRequest();
           const removeResult = await mikrotikClient.removeDhcpLeaseByMac(reg.primaryMac);
           await mikrotikClient.removeAllHotspotActiveByMac(reg.primaryMac).catch(() => {});
 

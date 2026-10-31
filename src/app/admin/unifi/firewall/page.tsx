@@ -1,4 +1,5 @@
 'use client';
+import { networkFetch } from '@/components/network/client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -73,8 +74,8 @@ export default function UnifiFirewallPage() {
       setError(null);
       
       const [fwRes, pfRes] = await Promise.all([
-        fetch('/api/unifi/settings?type=firewall'),
-        fetch('/api/unifi/settings?type=portforwards'),
+        networkFetch('/api/unifi/settings?type=firewall'),
+        networkFetch('/api/unifi/settings?type=portforwards'),
       ]);
 
       const [fwJson, pfJson] = await Promise.all([fwRes.json(), pfRes.json()]);
@@ -98,7 +99,7 @@ export default function UnifiFirewallPage() {
 
   const handleCreateFirewallRule = async () => {
     try {
-      const res = await fetch('/api/unifi/settings', {
+      const res = await networkFetch('/api/unifi/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -132,7 +133,7 @@ export default function UnifiFirewallPage() {
     if (!confirm('Xóa rule này?')) return;
     
     try {
-      const res = await fetch('/api/unifi/settings', {
+      const res = await networkFetch('/api/unifi/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'firewall', action: 'delete', id }),
@@ -167,7 +168,7 @@ export default function UnifiFirewallPage() {
     switch (action) {
       case 'accept': return 'text-green-600 bg-green-50';
       case 'drop': return 'text-red-600 bg-red-50';
-      case 'reject': return 'text-orange-600 bg-orange-50';
+      case 'reject': return 'text-amber-600 bg-amber-50';
       default: return 'text-slate-600 bg-slate-50';
     }
   };
@@ -176,7 +177,7 @@ export default function UnifiFirewallPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-3 border-purple-600 border-t-transparent rounded-full animate-spin" />
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
           <p className="text-slate-500 text-sm">Đang tải firewall...</p>
         </div>
       </div>
@@ -203,7 +204,7 @@ export default function UnifiFirewallPage() {
           {activeTab === 'rules' && (
             <button
               onClick={() => setCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
             >
               <Plus className="w-4 h-4" />
               Tạo Rule
@@ -218,7 +219,7 @@ export default function UnifiFirewallPage() {
           onClick={() => setActiveTab('rules')}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             activeTab === 'rules'
-              ? 'bg-purple-600 text-white'
+              ? 'bg-blue-600 text-white'
               : 'bg-white text-slate-600 hover:bg-slate-100'
           }`}
         >
@@ -228,7 +229,7 @@ export default function UnifiFirewallPage() {
           onClick={() => setActiveTab('portforwards')}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
             activeTab === 'portforwards'
-              ? 'bg-purple-600 text-white'
+              ? 'bg-blue-600 text-white'
               : 'bg-white text-slate-600 hover:bg-slate-100'
           }`}
         >
@@ -422,7 +423,7 @@ export default function UnifiFirewallPage() {
                     type="text"
                     value={fwFormData.name}
                     onChange={(e) => setFwFormData({ ...fwFormData, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="My Firewall Rule"
                   />
                 </div>
@@ -433,7 +434,7 @@ export default function UnifiFirewallPage() {
                     <select
                       value={fwFormData.action}
                       onChange={(e) => setFwFormData({ ...fwFormData, action: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="accept">Accept</option>
                       <option value="drop">Drop</option>
@@ -445,7 +446,7 @@ export default function UnifiFirewallPage() {
                     <select
                       value={fwFormData.ruleset}
                       onChange={(e) => setFwFormData({ ...fwFormData, ruleset: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     >
                       <option value="WAN">WAN</option>
                       <option value="LAN">LAN</option>
@@ -461,7 +462,7 @@ export default function UnifiFirewallPage() {
                       type="text"
                       value={fwFormData.src_ip}
                       onChange={(e) => setFwFormData({ ...fwFormData, src_ip: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="any hoặc IP/CIDR"
                     />
                   </div>
@@ -471,7 +472,7 @@ export default function UnifiFirewallPage() {
                       type="text"
                       value={fwFormData.src_port}
                       onChange={(e) => setFwFormData({ ...fwFormData, src_port: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="e.g. 1024:65535"
                     />
                   </div>
@@ -484,7 +485,7 @@ export default function UnifiFirewallPage() {
                       type="text"
                       value={fwFormData.dst_ip}
                       onChange={(e) => setFwFormData({ ...fwFormData, dst_ip: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="any hoặc IP/CIDR"
                     />
                   </div>
@@ -494,7 +495,7 @@ export default function UnifiFirewallPage() {
                       type="text"
                       value={fwFormData.dst_port}
                       onChange={(e) => setFwFormData({ ...fwFormData, dst_port: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="e.g. 80, 443"
                     />
                   </div>
@@ -515,7 +516,7 @@ export default function UnifiFirewallPage() {
                               setFwFormData({ ...fwFormData, protocols: fwFormData.protocols.filter(p => p !== proto) });
                             }
                           }}
-                          className="w-4 h-4 text-purple-600 rounded"
+                          className="w-4 h-4 text-blue-600 rounded"
                         />
                         <span className="text-sm text-slate-700 uppercase">{proto}</span>
                       </label>
@@ -528,7 +529,7 @@ export default function UnifiFirewallPage() {
                     type="checkbox"
                     checked={fwFormData.logging}
                     onChange={(e) => setFwFormData({ ...fwFormData, logging: e.target.checked })}
-                    className="w-4 h-4 text-purple-600 rounded"
+                    className="w-4 h-4 text-blue-600 rounded"
                   />
                   <span className="text-sm text-slate-700">Enable Logging</span>
                 </label>
@@ -544,7 +545,7 @@ export default function UnifiFirewallPage() {
                 <button
                   onClick={handleCreateFirewallRule}
                   disabled={!fwFormData.name}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   Tạo Rule
                 </button>

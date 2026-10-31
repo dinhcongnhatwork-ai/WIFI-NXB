@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   images: {
     remotePatterns: [
       {
@@ -17,20 +18,7 @@ const nextConfig = {
       bodySizeLimit: '50mb',
     },
     instrumentationHook: true,
-  },
-  async rewrites() {
-    if (process.env.APP_SERVER_MODE !== 'frontend') {
-      return [];
-    }
-
-    const backendUrl = process.env.BACKEND_URL || 'http://127.0.0.1:3001';
-
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${backendUrl}/api/:path*`,
-      },
-    ];
+    cpus: 2,
   },
 };
 

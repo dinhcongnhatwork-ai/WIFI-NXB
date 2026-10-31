@@ -1,4 +1,5 @@
 'use client';
+import { networkFetch } from '@/components/network/client';
 
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
@@ -46,8 +47,8 @@ export default function UnifiSettingsPage() {
       setError(null);
 
       const [ctrlRes, healthRes] = await Promise.all([
-        fetch('/api/unifi/info?type=controller'),
-        fetch('/api/unifi/info?type=health'),
+        networkFetch('/api/unifi/info?type=controller'),
+        networkFetch('/api/unifi/info?type=health'),
       ]);
 
       const [ctrlJson, healthJson] = await Promise.all([ctrlRes.json(), healthRes.json()]);
@@ -71,7 +72,7 @@ export default function UnifiSettingsPage() {
 
   const handleRunSpeedtest = async () => {
     try {
-      const res = await fetch('/api/unifi/settings', {
+      const res = await networkFetch('/api/unifi/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type: 'speedtest' }),
@@ -91,7 +92,7 @@ export default function UnifiSettingsPage() {
   const handleSaveSettings = async () => {
     try {
       setSaving(true);
-      const res = await fetch('/api/unifi/settings', {
+      const res = await networkFetch('/api/unifi/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -147,7 +148,7 @@ export default function UnifiSettingsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-3 border-purple-600 border-t-transparent rounded-full animate-spin" />
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
           <p className="text-slate-500 text-sm">Đang tải cấu hình...</p>
         </div>
       </div>
@@ -177,8 +178,8 @@ export default function UnifiSettingsPage() {
         {/* Controller Info */}
         <div className="bg-white rounded-xl border border-slate-200 p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-              <Server className="w-5 h-5 text-purple-600" />
+            <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Server className="w-5 h-5 text-blue-600" />
             </div>
             <h2 className="text-lg font-semibold text-slate-900">Controller Info</h2>
           </div>
@@ -274,10 +275,10 @@ export default function UnifiSettingsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
         <button
           onClick={handleRunSpeedtest}
-          className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200 hover:border-purple-300 hover:bg-purple-50 transition-colors"
+          className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-colors"
         >
-          <div className="w-10 h-10 rounded-lg bg-purple-100 flex items-center justify-center">
-            <Zap className="w-5 h-5 text-purple-600" />
+          <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
+            <Zap className="w-5 h-5 text-blue-600" />
           </div>
           <div className="text-left">
             <p className="font-medium text-slate-900">Run Speedtest</p>
@@ -295,7 +296,7 @@ export default function UnifiSettingsPage() {
           </div>
         </button>
 
-        <button className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200 hover:border-amber-300 hover:bg-amber-50 transition-colors">
+        <button disabled title="Use per-device firmware action on the Devices page" className="flex items-center gap-3 p-4 bg-white rounded-xl border border-slate-200 opacity-50 hover:border-amber-300 hover:bg-amber-50 transition-colors">
           <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
             <Gauge className="w-5 h-5 text-amber-600" />
           </div>
@@ -329,92 +330,18 @@ export default function UnifiSettingsPage() {
                 onChange={(e) => setDpiEnabled(e.target.checked)}
                 className="sr-only peer"
               />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
             </label>
           </div>
 
-          {/* Auto Upgrade */}
-          <div className="flex items-center justify-between py-4 border-b border-slate-100">
-            <div>
-              <h3 className="text-sm font-medium text-slate-900">Auto Firmware Upgrade</h3>
-              <p className="text-xs text-slate-500 mt-1">Tự động nâng cấp firmware khi có bản mới</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                defaultChecked
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-            </label>
-          </div>
-
-          {/* LED Control */}
-          <div className="flex items-center justify-between py-4 border-b border-slate-100">
-            <div>
-              <h3 className="text-sm font-medium text-slate-900">LED Control</h3>
-              <p className="text-xs text-slate-500 mt-1">Điều khiển đèn LED trên thiết bị</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                defaultChecked
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-            </label>
-          </div>
-
-          {/* Custom DNS */}
-          <div className="py-4 border-b border-slate-100">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-sm font-medium text-slate-900">Custom DNS</h3>
-                <p className="text-xs text-slate-500 mt-1">Sử dụng DNS server tùy chỉnh</p>
-              </div>
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input
-                  type="checkbox"
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
-              </label>
-            </div>
-            <div className="grid grid-cols-2 gap-4 mt-3">
-              <input
-                type="text"
-                placeholder="Primary DNS (e.g. 8.8.8.8)"
-                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-              <input
-                type="text"
-                placeholder="Secondary DNS (e.g. 8.8.4.4)"
-                className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-              />
-            </div>
-          </div>
-
-          {/* NTP Server */}
-          <div className="py-4">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="text-sm font-medium text-slate-900">NTP Server</h3>
-                <p className="text-xs text-slate-500 mt-1">Server đồng bộ thời gian</p>
-              </div>
-            </div>
-            <input
-              type="text"
-              defaultValue="pool.ntp.org"
-              className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
-            />
-          </div>
+          <p className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">Controller auto-upgrade, controller reboot, global DNS and NTP are unavailable through the configured adapter. Configure device LED and firmware actions on the Devices page.</p>
         </div>
 
         <div className="mt-6 pt-6 border-t border-slate-200">
           <button
             onClick={handleSaveSettings}
             disabled={saving}
-            className="flex items-center gap-2 px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
             {saving ? 'Đang lưu...' : 'Lưu cài đặt'}

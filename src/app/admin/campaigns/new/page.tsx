@@ -4,7 +4,7 @@ import { useEffect, useState, FormEvent, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { api } from '@/lib/api';
+import { api, authenticatedFetch } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { ArrowLeft, RefreshCw, Radio, Plus, Server, CheckCircle2, ShieldCheck, Globe } from 'lucide-react';
 
@@ -33,7 +33,7 @@ interface UnifiDeviceOption {
 
 export default function NewCampaignPage() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, canOperate } = useAuth();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [unifiSsids, setUnifiSsids] = useState<UnifiSsidOption[]>([]);
   const [unifiDevices, setUnifiDevices] = useState<UnifiDeviceOption[]>([]);
@@ -55,8 +55,8 @@ export default function NewCampaignPage() {
     try {
       setLoadingUnifi(true);
       const [ssidsRes, devicesRes] = await Promise.all([
-        fetch('/api/unifi/ssids').then((r) => r.json()).catch(() => ({ success: false })),
-        fetch('/api/unifi/devices').then((r) => r.json()).catch(() => ({ success: false })),
+        authenticatedFetch('/api/unifi/ssids').then((r) => r.json()).catch(() => ({ success: false })),
+        authenticatedFetch('/api/unifi/devices').then((r) => r.json()).catch(() => ({ success: false })),
       ]);
 
       if (ssidsRes.success && Array.isArray(ssidsRes.data)) {
@@ -98,6 +98,7 @@ export default function NewCampaignPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!canOperate) return;
     if (!ssid.trim()) {
       toast.error('Vui lòng chọn hoặc nhập tên SSID');
       return;
@@ -151,6 +152,7 @@ export default function NewCampaignPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        <fieldset disabled={!canOperate} className="min-w-0 space-y-6">
         {/* Double-Bezel Card: Thông tin cơ bản */}
         <div className="rounded-[1.5rem] bg-slate-50 p-1.5 ring-1 ring-slate-200/80 shadow-sm">
           <div className="rounded-[calc(1.5rem-0.375rem)] bg-white p-6 shadow-[inset_0_1px_1px_rgba(255,255,255,0.8)] space-y-5">
@@ -398,6 +400,7 @@ export default function NewCampaignPage() {
             {loading ? 'Đang tạo...' : 'Lưu chiến dịch'}
           </button>
         </div>
+      </fieldset>
       </form>
     </div>
   );

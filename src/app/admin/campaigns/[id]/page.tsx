@@ -4,7 +4,7 @@ import { useEffect, useState, FormEvent, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/auth/AuthProvider';
-import { api } from '@/lib/api';
+import { api, authenticatedFetch } from '@/lib/api';
 import toast from 'react-hot-toast';
 import { ArrowLeft, Save, RefreshCw, Radio } from 'lucide-react';
 
@@ -39,7 +39,7 @@ interface Campaign {
 export default function EditCampaignPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, canOperate } = useAuth();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -61,7 +61,7 @@ export default function EditCampaignPage() {
   const fetchUnifiData = useCallback(async () => {
     try {
       setLoadingUnifi(true);
-      const res = await fetch('/api/unifi/ssids');
+      const res = await authenticatedFetch('/api/unifi/ssids');
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setUnifiSsids(json.data);
@@ -134,6 +134,7 @@ export default function EditCampaignPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!canOperate) return;
     setSaving(true);
     try {
       await api.put(
@@ -185,6 +186,7 @@ export default function EditCampaignPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 p-6 space-y-5">
+        <fieldset disabled={!canOperate} className="min-w-0 space-y-6">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-2">Tên chiến dịch</label>
           <input
@@ -382,6 +384,7 @@ export default function EditCampaignPage() {
             Hủy
           </Link>
         </div>
+      </fieldset>
       </form>
     </div>
   );

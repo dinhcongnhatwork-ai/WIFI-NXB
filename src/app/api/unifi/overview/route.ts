@@ -1,6 +1,7 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
-import { UnifiClient } from '@/lib/unifi';
-import { getUnifiConfig } from '@/lib/settings';
+import { getUnifiClientFromRequest } from '@/lib/settings';
+import { resolveConnection } from '@/lib/network/connections';
 import { UnifiDevice, UnifiNetwork, UnifiUser } from '@/types/unifi';
 
 export const dynamic = 'force-dynamic';
@@ -85,38 +86,42 @@ function buildCharts(devices: UnifiDevice[], clients: UnifiUser[], networks: Uni
     stationsByNetwork,
   };
 }
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   try {
-    const config = await getUnifiConfig();
-    const searchParams = req.nextUrl.searchParams;
-    const controllerUrl = searchParams.get('controllerUrl') || config.controllerUrl;
-    const username = searchParams.get('username') || config.username;
-    const password = searchParams.get('password') || config.password;
-    const site = searchParams.get('site') || config.site || 'default';
-
-    const client = new UnifiClient({
-      controllerUrl,
-      username,
-      password,
-      site,
-      rejectUnauthorized: false,
-    });
-
+    const connection = await resolveConnection('UNIFI', req);
+    const client = await getUnifiClientFromRequest(req);
+    const controllerUrl = connection.baseUrl;
+    const username = connection.username;
     await client.login();
     const resolvedSite = client.getCurrentSite();
 
-    const [devices, ssids, sites, health, alerts, clients, networks, stats, topology] = await Promise.all([
-      client.getDevices().catch(() => []),
-      client.getWlanConfs().catch(() => []),
-      client.getSites().catch(() => []),
-      client.getHealth().catch(() => ({ subsystems: [] })),
-      client.getAlerts().catch(() => []),
-      client.getClients().catch(() => []),
-      client.getNetworks().catch(() => []),
-      client.getDashboardStats().catch(() => null),
-      client.getTopology().catch(() => ({ nodes: [], links: [], summary: { gateways: 0, switches: 0, accessPoints: 0, networks: 0, clients: 0 } })),
+    const warnings: string[] = [];
+    const optional = async <T,>(name: string, read:()=>Promise<T>, empty:T):Promise<T> => {
+      try { return await read(); } catch { warnings.push(`${name}: unavailable or forbidden`); return empty; }
+    };
+    const [devices, clients, sites, topology] = await Promise.all([client.getDevices(), client.getClients(), client.getSites(), client.getTopology()]);
+    const [ssids, health, alerts, networks, stats] = await Promise.all([
+      optional('Wi-Fi configuration',()=>client.getWlanConfs(),[]),
+      optional('Health',()=>client.getHealth(),{subsystems:[]}),
+      optional('Alerts',()=>client.getAlerts(),[]),
+      optional('Networks',()=>client.getNetworks(),[]),
+      optional('Dashboard statistics',()=>client.getDashboardStats(),null as any),
     ]);
-
+    const onlineDevices = (devices as UnifiDevice[]).filter((d) => d.status === 'online').length;
+    const computedStats = stats || {
+      siteId: resolvedSite,
+      siteName: resolvedSite,
+      deviceCount: devices.length,
+      onlineDevices,
+      offlineDevices: Math.max(devices.length - onlineDevices, 0),
+      userCount: clients.length,
+      guestCount: (clients as UnifiUser[]).filter((c) => c.isGuest).length,
+      activeUsers: (clients as UnifiUser[]).filter((c) => !c.isGuest).length,
+      totalRxBytes: (clients as UnifiUser[]).reduce((sum, c) => sum + toNumber(c.rxBytes), 0),
+      totalTxBytes: (clients as UnifiUser[]).reduce((sum, c) => sum + toNumber(c.txBytes), 0),
+      uptime: 0,
+    };
+    const summary = {gateways:topology.nodes.filter(n=>n.type==='gateway').length,switches:topology.nodes.filter(n=>n.type==='switch').length,accessPoints:topology.nodes.filter(n=>n.type==='ap').length,networks:0,clients:clients.length};
     const charts = buildCharts(devices as UnifiDevice[], clients as UnifiUser[], networks as UnifiNetwork[]);
 
     await client.logout().catch(() => {});
@@ -131,8 +136,9 @@ export async function GET(req: NextRequest) {
         alerts,
         clients,
         networks,
-        stats,
-        topology,
+        stats: computedStats,
+        topology: {...topology, summary},
+        warnings,
         charts,
         connection: {
           controllerUrl,
@@ -153,3 +159,5 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);

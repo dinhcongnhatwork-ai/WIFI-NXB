@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
+import AdminMutationLink from '@/components/admin/AdminMutationLink';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -37,7 +38,7 @@ interface Campaign {
 }
 
 export default function CampaignsPage() {
-  const { token } = useAuth();
+  const { token, canOperate, canAdmin } = useAuth();
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -93,6 +94,7 @@ export default function CampaignsPage() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canOperate) return;
     if (!confirm('Xóa chiến dịch này?')) return;
     try {
       await api.delete(`/api/campaigns/${id}`, token!);
@@ -105,6 +107,7 @@ export default function CampaignsPage() {
   };
 
   const handleToggleActive = async (id: string, active: boolean) => {
+    if (!canOperate) return;
     try {
       await api.put(`/api/campaigns/${id}`, { active: !active }, token!);
       toast.success(active ? 'Đã tạm dừng' : 'Đã kích hoạt');
@@ -116,6 +119,7 @@ export default function CampaignsPage() {
   };
 
   const handlePublishTemplate = async (templateId: string) => {
+    if (!canOperate) return;
     try {
       await api.put(`/api/templates/${templateId}`, { status: 'published' }, token!);
       toast.success('Đã xuất bản mẫu giao diện');
@@ -127,6 +131,7 @@ export default function CampaignsPage() {
   };
 
   const handleTogglePortal = async (id: string, currentEnabled: boolean) => {
+    if (!canOperate) return;
     try {
       await api.put(`/api/campaigns/${id}`, { portalEnabled: !currentEnabled }, token!);
       toast.success(currentEnabled ? 'Đã gỡ khỏi Portal' : 'Đã gán vào Portal');
@@ -137,6 +142,7 @@ export default function CampaignsPage() {
   };
 
   const handleResetWifi = async () => {
+    if (!canAdmin) return;
     if (!resetTarget) return;
     setResetLoading(true);
     try {
@@ -171,7 +177,7 @@ export default function CampaignsPage() {
   const menuContent = openMenuId && menuAnchor && typeof document !== 'undefined' ? createPortal(
     <div
       style={{ position: 'fixed', top: menuAnchor.top, left: menuAnchor.left, zIndex: 99999 }}
-      className="w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1 animate-fade-in"
+      className="admin-shell admin-popover w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1 animate-fade-in"
       onMouseDown={(e) => e.stopPropagation()}
     >
       {(() => {
@@ -207,6 +213,7 @@ export default function CampaignsPage() {
             </Link>
             {c.template?.status !== 'published' && (
               <button
+                disabled={!canOperate}
                 onMouseDown={() => handlePublishTemplate(c.templateId)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 transition-colors"
               >
@@ -215,6 +222,7 @@ export default function CampaignsPage() {
               </button>
             )}
             <button
+              disabled={!canOperate}
               onMouseDown={() => handleTogglePortal(c.id, c.portalEnabled)}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors ${
                 c.portalEnabled ? 'text-emerald-600' : 'text-slate-600'
@@ -225,14 +233,16 @@ export default function CampaignsPage() {
             </button>
             <div className="my-1 border-t border-slate-100" />
             <button
+              disabled={!canAdmin}
               onMouseDown={() => setResetTarget(c)}
-              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-orange-600 hover:bg-orange-50 transition-colors"
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-amber-600 hover:bg-amber-50 transition-colors"
             >
               <RotateCcw className="w-4 h-4" />
               Reset WiFi
             </button>
             <div className="my-1 border-t border-slate-100" />
             <button
+              disabled={!canOperate}
               onMouseDown={() => handleToggleActive(c.id, c.active)}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
             >
@@ -249,6 +259,7 @@ export default function CampaignsPage() {
               )}
             </button>
             <button
+              disabled={!canOperate}
               onMouseDown={() => { setOpenMenuId(null); handleDelete(c.id); }}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
             >
@@ -269,13 +280,13 @@ export default function CampaignsPage() {
           <h1 className="text-2xl font-bold text-slate-900">Chiến dịch</h1>
           <p className="text-slate-500 text-sm mt-1">Quản lý chiến dịch WiFi marketing</p>
         </div>
-        <Link
+        <AdminMutationLink
           href="/admin/campaigns/new"
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium shadow-sm"
         >
           <Plus className="w-4 h-4" />
           Tạo chiến dịch
-        </Link>
+        </AdminMutationLink>
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200">
@@ -301,13 +312,13 @@ export default function CampaignsPage() {
             <Megaphone className="w-12 h-12 text-slate-300 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-slate-900 mb-2">Chưa có chiến dịch</h3>
             <p className="text-slate-500 text-sm mb-6">Tạo chiến dịch và gán vào SSID</p>
-            <Link
+            <AdminMutationLink
               href="/admin/campaigns/new"
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors text-sm font-medium"
             >
               <Plus className="w-4 h-4" />
               Tạo chiến dịch
-            </Link>
+            </AdminMutationLink>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -367,7 +378,9 @@ export default function CampaignsPage() {
                     </td>
                     <td className="px-5 py-3">
                       <button
+                        disabled={!canOperate}
                         onClick={() => handleTogglePortal(c.id, c.portalEnabled)}
+                        role="switch" aria-checked={c.portalEnabled} aria-label={`Hiển thị Portal: ${c.name}`}
                         title={c.portalEnabled ? 'Đang hiển thị trên Portal' : 'Chưa gán Portal'}
                         className={`relative inline-flex h-6 items-center w-11 rounded-full transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
                           c.portalEnabled ? 'bg-blue-600' : 'bg-slate-200'
@@ -383,6 +396,7 @@ export default function CampaignsPage() {
                     <td className="px-5 py-3 text-sm text-slate-600 whitespace-nowrap">{c._count.logs}</td>
                     <td className="px-3 py-3">
                       <button
+                        aria-label={`Thao tác chiến dịch ${c.name}`} aria-expanded={openMenuId === c.id}
                         ref={openMenuId === c.id ? menuTriggerRef : undefined}
                         onClick={(e) => {
                           e.stopPropagation();
@@ -412,8 +426,8 @@ export default function CampaignsPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-3 mb-4">
-              <div className="w-12 h-12 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
-                <RotateCcw className="w-6 h-6 text-orange-600" />
+              <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+                <RotateCcw className="w-6 h-6 text-amber-600" />
               </div>
               <div>
                 <h3 className="text-lg font-bold text-slate-900">Reset WiFi</h3>
@@ -434,8 +448,8 @@ export default function CampaignsPage() {
               </button>
               <button
                 onClick={handleResetWifi}
-                disabled={resetLoading}
-                className="flex-1 px-4 py-2.5 bg-orange-500 rounded-xl text-sm font-semibold text-white hover:bg-orange-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                disabled={!canAdmin || resetLoading}
+                className="flex-1 px-4 py-2.5 bg-amber-500 rounded-xl text-sm font-semibold text-white hover:bg-amber-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 {resetLoading ? (
                   <>

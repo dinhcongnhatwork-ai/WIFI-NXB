@@ -1,301 +1,91 @@
 'use client';
 
-import Link from 'next/link';
+import Link from '@/components/network/ScopedNetworkLink';
 import Image from 'next/image';
 import { usePathname } from 'next/navigation';
-import { motion, AnimatePresence } from 'framer-motion';
-import {
-  LayoutDashboard,
-  Palette,
-  Megaphone,
-  FolderOpen,
-  Users,
-  BarChart3,
-  Server,
-  Wifi,
-  Settings,
-  X,
-  ChevronDown,
-  ChevronRight,
-  Shield,
-  Network,
-  Radio,
-  Globe,
-  Activity,
-  UserCheck,
-} from 'lucide-react';
-import { useState } from 'react';
+import { ChevronDown, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { useAuth } from '@/components/auth/AuthProvider';
+import { adminNavigation, roleLabels } from './navigation';
 
-const MAIN_NAV_ITEMS = [
-  { href: '/admin', label: 'Tổng quan', icon: LayoutDashboard, exact: true },
-  { href: '/admin/attendance', label: 'Điểm danh họp', icon: UserCheck },
-  { href: '/admin/templates', label: 'Mẫu hiển thị', icon: Palette },
-  { href: '/admin/campaigns', label: 'Chiến dịch', icon: Megaphone },
-  { href: '/admin/media', label: 'Thư viện', icon: FolderOpen },
-  { href: '/admin/users', label: 'Người dùng', icon: Users },
-  { href: '/admin/reports', label: 'Báo cáo', icon: BarChart3 },
-];
-
-const UNIFI_NAV_ITEMS = [
-  { href: '/admin/unifi', label: 'Tổng quan', icon: Activity, exact: true },
-  { href: '/admin/unifi/devices', label: 'Thiết bị', icon: Server },
-  { href: '/admin/unifi/clients', label: 'Kết nối', icon: Users },
-  { href: '/admin/unifi/ssids', label: 'SSID/WiFi', icon: Radio },
-  { href: '/admin/unifi/networks', label: 'Mạng', icon: Network },
-  { href: '/admin/unifi/firewall', label: 'Firewall', icon: Shield },
-  { href: '/admin/unifi/settings', label: 'Cấu hình', icon: Globe },
-];
-
-const MIKROTIK_NAV_ITEMS = [
-  { href: '/admin/mikrotik', label: 'Tổng quan', icon: Activity, exact: true },
-  { href: '/admin/mikrotik/interfaces', label: 'Interfaces', icon: Network },
-  { href: '/admin/mikrotik/ip', label: 'IP & DHCP', icon: Globe },
-  { href: '/admin/mikrotik/firewall', label: 'Firewall', icon: Shield },
-  { href: '/admin/mikrotik/hotspot', label: 'Hotspot', icon: Radio },
-  { href: '/admin/mikrotik/raw', label: 'Raw API', icon: Server },
-];
-
-const navItemClass = (active: boolean) => {
-  return `
-    group flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all duration-150
-    ${active
-      ? 'bg-blue-50 text-blue-700 border-blue-100 shadow-sm'
-      : 'border-transparent text-slate-500 hover:border-slate-200 hover:bg-white hover:text-slate-900'
-    }
-  `;
-};
-
-interface Props {
-  open: boolean;
-  onClose: () => void;
-}
+interface Props { open: boolean; onClose: () => void }
 
 export default function AdminSidebar({ open, onClose }: Props) {
   const pathname = usePathname();
-  const [unifiExpanded, setUnifiExpanded] = useState(pathname.startsWith('/admin/unifi'));
-  const [mikrotikExpanded, setMikrotikExpanded] = useState(pathname.startsWith('/admin/mikrotik'));
+  const { canAdmin, role, username } = useAuth();
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({
+    unifi: pathname.startsWith('/admin/unifi'), mikrotik: pathname.startsWith('/admin/mikrotik'),
+  });
+  const panel = useRef<HTMLElement>(null);
+  const closeButton = useRef<HTMLButtonElement>(null);
 
-  const isActive = (href: string, exact?: boolean) => {
-    if (exact) return pathname === href;
-    return pathname.startsWith(href);
-  };
+  useEffect(() => {
+    if (!open) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const workspace = document.querySelector<HTMLElement>('.admin-workspace');
+    if (workspace) workspace.inert = true;
+    const focusFrame = requestAnimationFrame(() => closeButton.current?.focus());
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const closeOnDesktop = () => { if (desktop.matches) onClose(); };
+    desktop.addEventListener('change', closeOnDesktop);
+    function handleKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') { event.preventDefault(); onClose(); }
+      if (event.key !== 'Tab') return;
+      const items = Array.from(panel.current?.querySelectorAll<HTMLElement>('a[href], button:not([disabled])') || [])
+        .filter(element => element.getClientRects().length > 0);
+      const first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      if (workspace) workspace.inert = false;
+      cancelAnimationFrame(focusFrame);
+      desktop.removeEventListener('change', closeOnDesktop);
+      document.removeEventListener('keydown', handleKey);
+      previousFocus?.focus();
+    };
+  }, [open, onClose]);
 
-  const isUnifiActive = pathname.startsWith('/admin/unifi');
-  const isMikrotikActive = pathname.startsWith('/admin/mikrotik');
+  useEffect(() => {
+    const group = adminNavigation.find(item => item.icon && pathname.startsWith(`/admin/${item.id}`));
+    if (group) setExpanded(previous => ({ ...previous, [group.id]: true }));
+  }, [pathname]);
 
-  return (
-    <>
-      {open && (
-        <div
-          className="fixed inset-0 bg-slate-900/20 backdrop-blur-[2px] z-40 lg:hidden"
-          onClick={onClose}
-        />
-      )}
-
-      <aside
-        className={`
-          fixed top-0 left-0 z-50 h-screen w-[268px] border-r border-slate-200 bg-white text-slate-600
-          transform transition-transform duration-300 ease-out
-          lg:translate-x-0
-          flex flex-col
-          ${open ? 'translate-x-0' : '-translate-x-full'}
-        `}
-      >
-        {/* Header with Logo */}
-        <div className="h-[72px] px-5 border-b border-slate-100 flex items-center justify-between">
-          <Link href="/admin" className="flex items-center gap-3 min-w-0">
-            <div className="relative w-11 h-11 rounded-xl overflow-hidden shadow-lg shadow-slate-200/60 border border-slate-100 bg-white flex-shrink-0">
-              <Image
-                src="/logo.png"
-                alt="WiFi Marketing"
-                fill
-                className="object-contain p-1.5"
-                priority
-              />
+  return <>
+    {open && <button className="admin-drawer-backdrop" aria-label="Đóng trình đơn điều hướng" onClick={onClose} tabIndex={-1} />}
+    <aside ref={panel} id="admin-sidebar" className={`admin-sidebar ${open ? 'is-open' : ''}`} aria-label="Điều hướng quản trị" role={open ? 'dialog' : undefined} aria-modal={open || undefined}>
+      <div className="admin-sidebar-brand">
+        <Link href="/admin" onClick={onClose} className="admin-brand-link">
+          <Image src="/logo.png" alt="" width={36} height={36} priority />
+          <span><strong>WiFi Marketing</strong><small>Hệ thống quản trị</small></span>
+        </Link>
+        <button ref={closeButton} onClick={onClose} className="admin-icon-button admin-mobile-only" aria-label="Đóng trình đơn"><X /></button>
+      </div>
+      <nav className="admin-navigation" aria-label="Điều hướng chính">
+        {adminNavigation.map(group => {
+          const items = group.items.filter(item => !item.adminOnly || canAdmin);
+          if (!items.length) return null;
+          const Icon = group.icon;
+          return <div key={group.id} className="admin-nav-group">
+            {Icon ? <button className="admin-nav-group-toggle" aria-expanded={!!expanded[group.id]} aria-controls={`admin-nav-${group.id}`} onClick={() => setExpanded(previous => ({ ...previous, [group.id]: !previous[group.id] }))}>
+              <Icon /><span>{group.label}</span><ChevronDown className={expanded[group.id] ? 'is-expanded' : ''} />
+            </button> : <p className="admin-nav-heading">{group.label}</p>}
+            <div id={`admin-nav-${group.id}`} hidden={!!Icon && !expanded[group.id]} className={Icon ? 'admin-nav-children' : ''}>
+              {items.map(item => {
+                const active = item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(`${item.href}/`);
+                return <Link key={item.href} href={item.href} onClick={onClose} aria-current={active ? 'page' : undefined} className="admin-nav-link">
+                  <item.icon /><span>{item.label}</span>
+                </Link>;
+              })}
             </div>
-            <div className="min-w-0">
-              <span className="text-slate-900 font-extrabold text-[15px] leading-tight block">WiFi Marketing</span>
-              <span className="text-blue-500 text-[11px] font-bold uppercase tracking-wide block">Admin Panel</span>
-            </div>
-          </Link>
-          <button
-            onClick={onClose}
-            className="lg:hidden p-1.5 rounded-lg hover:bg-slate-100 transition-colors flex-shrink-0"
-          >
-            <X className="w-5 h-5 text-slate-400" />
-          </button>
-        </div>
-
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-          {/* Main navigation section */}
-          <div className="mb-4">
-            <p className="px-3 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
-              Menu
-            </p>
-            {MAIN_NAV_ITEMS.map((item) => {
-              const active = isActive(item.href, item.exact);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onClose}
-                  className={navItemClass(active)}
-                >
-                  <span className="flex items-center gap-3">
-                    <item.icon className={`w-[18px] h-[18px] ${active ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-600'}`} />
-                    <span className={active ? 'font-semibold' : ''}>{item.label}</span>
-                  </span>
-                  {active && <ChevronRight className="w-4 h-4 text-blue-400" />}
-                </Link>
-              );
-            })}
-          </div>
-
-          {/* System section */}
-          <div className="mb-4">
-            <p className="px-3 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
-              Hệ thống
-            </p>
-
-            {/* UniFi */}
-            <button
-              onClick={() => setUnifiExpanded(!unifiExpanded)}
-              className={navItemClass(isUnifiActive)}
-            >
-              <div className="flex items-center gap-3">
-                <Server className={`w-[18px] h-[18px] ${isUnifiActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-600'}`} />
-                <span className={isUnifiActive ? 'font-semibold' : ''}>UniFi</span>
-              </div>
-              <ChevronDown
-                className={`w-4 h-4 transition-transform duration-200 ${unifiExpanded ? 'rotate-180' : ''} ${isUnifiActive ? 'text-blue-400' : 'text-slate-400'}`}
-              />
-            </button>
-
-            <AnimatePresence>
-              {unifiExpanded && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="mt-1.5 ml-3 pl-3 border-l border-slate-200 space-y-0.5 py-1">
-                    {UNIFI_NAV_ITEMS.map((item) => {
-                      const active = isActive(item.href, item.exact);
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={onClose}
-                          className={`
-                            flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all
-                            ${active
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-                            }
-                          `}
-                        >
-                          <item.icon className={`w-4 h-4 ${active ? 'text-blue-500' : 'text-slate-400'}`} />
-                          {item.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* MikroTik */}
-            <button
-              onClick={() => setMikrotikExpanded(!mikrotikExpanded)}
-              className={`${navItemClass(isMikrotikActive)} mt-1`}
-            >
-              <div className="flex items-center gap-3">
-                <Wifi className={`w-[18px] h-[18px] ${isMikrotikActive ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-600'}`} />
-                <span className={isMikrotikActive ? 'font-semibold' : ''}>MikroTik</span>
-              </div>
-              <ChevronDown
-                className={`w-4 h-4 transition-transform duration-200 ${mikrotikExpanded ? 'rotate-180' : ''} ${isMikrotikActive ? 'text-blue-400' : 'text-slate-400'}`}
-              />
-            </button>
-
-            <AnimatePresence>
-              {mikrotikExpanded && (
-                <motion.div
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="overflow-hidden"
-                >
-                  <div className="mt-1.5 ml-3 pl-3 border-l border-slate-200 space-y-0.5 py-1">
-                    {MIKROTIK_NAV_ITEMS.map((item) => {
-                      const active = isActive(item.href, item.exact);
-                      return (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={onClose}
-                          className={`
-                            flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all
-                            ${active
-                              ? 'bg-blue-50 text-blue-700'
-                              : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
-                            }
-                          `}
-                        >
-                          <item.icon className={`w-4 h-4 ${active ? 'text-blue-500' : 'text-slate-400'}`} />
-                          {item.label}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          {/* Settings */}
-          <div>
-            <p className="px-3 text-[10px] font-extrabold uppercase tracking-widest text-slate-400 mb-2">
-              Cài đặt
-            </p>
-            <Link
-              href="/admin/settings"
-              onClick={onClose}
-              className={navItemClass(pathname === '/admin/settings')}
-            >
-              <span className="flex items-center gap-3">
-                <Settings className={`w-[18px] h-[18px] ${pathname === '/admin/settings' ? 'text-blue-500' : 'text-slate-400 group-hover:text-slate-600'}`} />
-                <span className={pathname === '/admin/settings' ? 'font-semibold' : ''}>Cài đặt</span>
-              </span>
-              {pathname === '/admin/settings' && <ChevronRight className="w-4 h-4 text-blue-400" />}
-            </Link>
-          </div>
-        </nav>
-
-        {/* Footer with logo watermark */}
-        <div className="px-4 py-4 border-t border-slate-100">
-          <div className="relative rounded-xl border border-slate-100 bg-slate-50 p-3 overflow-hidden">
-            {/* Mini watermark */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none opacity-[0.07]">
-              <div className="relative w-20 h-20">
-                <Image src="/logo.png" alt="" fill className="object-contain" />
-              </div>
-            </div>
-            <div className="relative flex items-center gap-3">
-              <div className="relative w-10 h-10 rounded-lg overflow-hidden shadow-sm border border-slate-200 bg-white flex-shrink-0">
-                <Image src="/logo.png" alt="" fill className="object-contain p-1" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-900 truncate">Quản Trị Viên</p>
-                <p className="text-xs text-slate-500">WiFi Marketing v1.0</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </aside>
-    </>
-  );
+          </div>;
+        })}
+      </nav>
+      <div className="admin-sidebar-footer"><strong>{username}</strong><span>{roleLabels[role || 'VIEWER']}</span></div>
+    </aside>
+  </>;
 }

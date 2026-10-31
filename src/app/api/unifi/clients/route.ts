@@ -1,10 +1,12 @@
+import { legacyMutation } from '@/lib/network/legacy-mutation';
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { getUnifiClientFromRequest } from '@/lib/settings';
 import { UnifiUser } from '@/types/unifi';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   try {
     const client = await getUnifiClientFromRequest(req);
     await client.login();
@@ -37,13 +39,13 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     const client = await getUnifiClientFromRequest(req);
     await client.login();
 
     const body = await req.json();
-    const { action, mac } = body;
+    const { action, mac, minutes, name, note } = body;
 
     let result: boolean | null = null;
 
@@ -59,13 +61,26 @@ export async function POST(req: NextRequest) {
         }
         break;
       case 'kick':
-        if (mac) {
-          result = await client.kickClient(mac);
-        }
-        break;
       case 'reconnect':
         if (mac) {
           result = await client.reconnectClient(mac);
+        }
+        break;
+      case 'authorize':
+        if (mac) {
+          result = await client.authorizeGuest(mac, minutes || 1440);
+        }
+        break;
+      case 'unauthorize':
+        if (mac) {
+          result = await client.unauthorizeGuest(mac);
+        }
+        break;
+      case 'note':
+      case 'rename':
+      case 'update':
+        if (mac) {
+          result = await client.setClientNoteAndName(mac, name, note);
         }
         break;
       default:
@@ -88,3 +103,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);
+export const POST = withPermission('operate', legacyMutation('UNIFI', handlePOST, handleGET));

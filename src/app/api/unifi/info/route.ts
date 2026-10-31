@@ -1,9 +1,10 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { getUnifiClientFromRequest } from '@/lib/settings';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   try {
     const client = await getUnifiClientFromRequest(req);
     await client.login();
@@ -52,3 +53,5 @@ export async function GET(req: NextRequest) {
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);

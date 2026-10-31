@@ -19,7 +19,7 @@ interface Template {
 
 export default function TemplateSettingsPage() {
   const { id } = useParams<{ id: string }>();
-  const { token } = useAuth();
+  const { token, canOperate } = useAuth();
   const router = useRouter();
   const [template, setTemplate] = useState<Template | null>(null);
   const [name, setName] = useState('');
@@ -42,6 +42,7 @@ export default function TemplateSettingsPage() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
+    if (!canOperate) return;
     setSaving(true);
     try {
       await api.put(`/api/templates/${id}`, { name, status }, token!);
@@ -92,6 +93,7 @@ export default function TemplateSettingsPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 p-6 space-y-6">
+        <fieldset disabled={!canOperate} className="min-w-0 space-y-6">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-2">
             Tên mẫu
@@ -140,6 +142,7 @@ export default function TemplateSettingsPage() {
             {saving ? 'Đang lưu...' : 'Lưu thay đổi'}
           </button>
         </div>
+      </fieldset>
       </form>
     </div>
   );

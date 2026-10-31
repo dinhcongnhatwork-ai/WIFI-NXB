@@ -1,3 +1,4 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { listUploadedFiles, uploadFile, deleteFiles, isSafeMediaKey } from '@/lib/minio';
 import { referencesMedia } from '@/lib/media';
@@ -14,7 +15,7 @@ async function usageSources() {
   ]);
   return [...drafts.map(item => ({ ...item, kind: 'draft' })), ...revisions.map(item => ({ ...item, name: `Published revision · ${item.templateId}`, kind: 'revision' }))];
 }
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   if (!authenticateRequest(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const [files, sources] = await Promise.all([listUploadedFiles(), usageSources()]);
@@ -27,7 +28,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ success: true, data, total: filtered.length, page, limit });
   } catch { return NextResponse.json({ error: 'Cannot load media list' }, { status: 500 }); }
 }
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   if (!authenticateRequest(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (Number(req.headers.get('content-length')) > MAX_MEDIA_SIZE + 1024 * 1024) return NextResponse.json({ error: 'File too large (max 50MB)' }, { status: 413 });
   try {
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, data: { url, key, type: media.type, name: file.name, size: media.buffer.length, lastModified: new Date().toISOString() } });
   } catch { return NextResponse.json({ error: 'Upload failed' }, { status: 500 }); }
 }
-export async function DELETE(req: NextRequest) {
+async function handleDELETE(req: NextRequest) {
   if (!authenticateRequest(req)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   try {
     const { keys } = await req.json();
@@ -55,3 +56,9 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true, deleted: keys.length });
   } catch { return NextResponse.json({ error: 'Delete failed' }, { status: 500 }); }
 }
+
+export const GET = withPermission('read', handleGET);
+
+export const POST = withPermission('operate', handlePOST);
+
+export const DELETE = withPermission('operate', handleDELETE);

@@ -1,10 +1,11 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { generateAttendanceExcelWorkbook } from '@/lib/attendance/excel';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -169,3 +170,5 @@ export async function GET(
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);

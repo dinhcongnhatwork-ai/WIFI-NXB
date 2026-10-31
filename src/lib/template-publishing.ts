@@ -37,6 +37,7 @@ function validateDraftStructure(value: Record<string, unknown>) {
   const walk = (v: unknown, ids: Set<string>, depth = 0): void => {
     if (!object(v) || ++count > 2000 || depth > 10) return fail();
     if (typeof v.id !== 'string' || ids.has(v.id) || !object(v.element) || typeof v.element.type !== 'string' || !Object.hasOwn(COMPONENT_LABELS, v.element.type) || !object(v.layout)) return fail();
+    if (v.element.type === 'flow_content' && !['video_gate', 'attendance_gate', 'announcement'].includes(v.element.screen as string)) return fail();
     ids.add(v.id);
     for (const key of ['x', 'y', 'width', 'height', 'rotation']) if (typeof v.layout[key] !== 'number' || !Number.isFinite(v.layout[key])) fail();
     if ((v.layout.width as number) <= 0 || (v.layout.height as number) <= 0) fail();
@@ -54,6 +55,17 @@ function validateDraftStructure(value: Record<string, unknown>) {
       section.nodes.forEach(node => walk(node, ids));
     }
     for (const node of Object.values(variant.flow)) if (node !== undefined && node !== null) walk(node, ids);
+    if (variant.screens !== undefined) {
+      if (!object(variant.screens)) return fail();
+      for (const [screen, surface] of Object.entries(variant.screens)) {
+        if (!['video_gate', 'attendance_gate', 'announcement'].includes(screen) || !object(surface) || !object(surface.background) || !Array.isArray(surface.sections)) return fail();
+        media(surface.backgroundMedia);
+        for (const section of surface.sections) {
+          if (!object(section) || !['flow', 'freeform'].includes(section.mode as string) || !Array.isArray(section.nodes) || ![section.width, section.height].every(n => typeof n === 'number' && Number.isFinite(n) && n > 0)) return fail();
+          section.nodes.forEach(node => walk(node, ids));
+        }
+      }
+    }
   }
 }
 export function normalizeDraft(value: unknown): Prisma.InputJsonValue {

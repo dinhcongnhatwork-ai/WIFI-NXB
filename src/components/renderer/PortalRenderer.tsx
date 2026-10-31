@@ -1,6 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import DocumentRenderer from './DocumentRenderer';
+import { toDocument } from '@/lib/template-document';
+import type { AttendanceContext } from './flow-runtime';
 import type {
   TemplateConfig,
   TemplateElement,
@@ -25,102 +28,12 @@ interface Props {
   redirectUrl?: string;
   campaignId?: string;
   previewMode?: 'mobile' | 'tablet' | 'desktop';
+  attendanceContext?: AttendanceContext;
+  portalSessionId?: string;
 }
 
-export default function PortalRenderer({ config, params, isPreview, redirectUrl, campaignId, previewMode }: Props) {
-  const bg = config.background;
-  const [autoDesktop, setAutoDesktop] = useState(false);
-  const [videoGateDismissed, setVideoGateDismissed] = useState(false);
-  const [attendanceGateDismissed, setAttendanceGateDismissed] = useState(false);
-
-  // Auto-detect desktop on the real portal (non-preview)
-  useEffect(() => {
-    if (!isPreview && !previewMode) {
-      const checkWidth = () => setAutoDesktop(window.innerWidth >= 768);
-      checkWidth();
-      window.addEventListener('resize', checkWidth);
-      return () => window.removeEventListener('resize', checkWidth);
-    }
-  }, [isPreview, previewMode]);
-
-  const isDesktop = previewMode ? (previewMode === 'desktop' || previewMode === 'tablet') : autoDesktop;
-  const bgImage = isDesktop ? (bg.imageDesktop || bg.imageMobile) : (bg.imageMobile || bg.imageDesktop);
-  const bgVideo = isDesktop ? (bg.videoDesktop || bg.videoMobile) : (bg.videoMobile || bg.videoDesktop);
-
-  const videoGateEl = config.elements.find(el => el.type === 'video_gate' && el.enabled) as VideoGateElement | undefined;
-  const announcementEl = config.elements.find(el => el.type === 'announcement' && el.enabled) as AnnouncementElement | undefined;
-  const attendanceGateEl = config.elements.find(el => el.type === 'attendance_gate' && el.enabled) as AttendanceGateElement | undefined;
-
-  const hasVideoGate = !isPreview && !!videoGateEl && !!videoGateEl.videoUrl;
-  const hasAnnouncement = !isPreview && !!announcementEl;
-  const hasAttendanceGate = !isPreview && !!attendanceGateEl;
-
-  // Trigger auto-play on inline video once ALL overlays are gone
-  const autoPlayTrigger = !hasVideoGate && !hasAnnouncement && !hasAttendanceGate ? 1 : (videoGateDismissed && attendanceGateDismissed) ? 2 : 0;
-
-  const showVideoGate = hasVideoGate && !videoGateDismissed;
-  const showAttendanceGate = hasAttendanceGate && !attendanceGateDismissed && (!hasVideoGate || videoGateDismissed);
-  const showAnnouncement = !isPreview && !!announcementEl && (!hasVideoGate || videoGateDismissed) && (!hasAttendanceGate || attendanceGateDismissed);
-
-  const isOverlayActive = showVideoGate || showAttendanceGate || showAnnouncement;
-
-  return (
-    <div className="portal-page" style={{ minHeight: isPreview ? '100%' : '100vh', position: 'relative' }}>
-      {/* Background */}
-      <div style={{ position: isPreview ? 'absolute' : 'fixed', inset: 0, zIndex: 0 }}>
-        {bgVideo ? (
-          <video
-            src={bgVideo}
-            autoPlay muted loop playsInline
-            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: (bg.type || 'cover') as React.CSSProperties['objectFit'] }}
-          />
-        ) : bgImage ? (
-          <div style={{ position: 'absolute', inset: 0, backgroundImage: `url(${bgImage})`, backgroundSize: bg.type || 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }} />
-        ) : (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: '#1e293b' }} />
-        )}
-        {bg.overlayOpacity > 0 && (
-          <div style={{ position: 'absolute', inset: 0, backgroundColor: bg.overlayColor, opacity: bg.overlayOpacity }} />
-        )}
-      </div>
-
-      {/* Content */}
-      <div
-        style={{
-          position: 'relative',
-          zIndex: 1,
-          padding: bg.padding || '20px',
-          minHeight: isPreview ? '100%' : '100vh',
-          display: 'flex',
-          flexDirection: 'column',
-          filter: isOverlayActive ? 'blur(16px) brightness(0.45)' : 'none',
-          pointerEvents: isOverlayActive ? 'none' : undefined,
-          transition: 'filter 0.5s ease-out',
-        }}
-      >
-        {config.elements
-          .filter(el => el.enabled && el.type !== 'video_gate' && el.type !== 'announcement' && el.type !== 'attendance_gate')
-          .map((el) => (
-            <RenderElement key={el.id} element={el} params={params} isPreview={isPreview} redirectUrl={redirectUrl} campaignId={campaignId} isDesktop={isDesktop} autoPlayTrigger={el.type === 'video' ? autoPlayTrigger : 0} />
-          ))}
-      </div>
-
-      {/* Video Gate overlay */}
-      {showVideoGate && (
-        <VideoGateRenderer el={videoGateEl} params={params} isPreview={isPreview} onDismissed={() => setVideoGateDismissed(true)} />
-      )}
-
-      {/* Attendance Gate overlay */}
-      {showAttendanceGate && attendanceGateEl && (
-        <AttendanceGateRenderer el={attendanceGateEl} params={params} campaignId={campaignId} redirectUrl={redirectUrl} onDismissed={() => setAttendanceGateDismissed(true)} />
-      )}
-
-      {/* Announcement overlay */}
-      {showAnnouncement && (
-        <AnnouncementRenderer el={announcementEl} params={params} />
-      )}
-    </div>
-  );
+export default function PortalRenderer({ config, params, isPreview, redirectUrl, campaignId, previewMode, attendanceContext, portalSessionId }: Props) {
+  return <DocumentRenderer document={toDocument(config)} params={params} mode={isPreview?'simulate':'live'} variant={previewMode} redirectUrl={redirectUrl} campaignId={campaignId} attendanceContext={attendanceContext} portalSessionId={portalSessionId} />;
 }
 
 export function RenderElement({
@@ -132,6 +45,7 @@ export function RenderElement({
   isDesktop,
   autoPlayTrigger,
   onSimulateConnect,
+  portalSessionId,
 }: {
   element: TemplateElement;
   params: Partial<PortalParams>;
@@ -141,6 +55,7 @@ export function RenderElement({
   isDesktop?: boolean;
   autoPlayTrigger?: number;
   onSimulateConnect?: () => void;
+  portalSessionId?: string;
 }) {
   switch (element.type) {
     case 'logo': return <LogoRenderer el={element} />;
@@ -149,7 +64,7 @@ export function RenderElement({
     case 'image': return <ImageRenderer el={element} isDesktop={isDesktop} />;
     case 'image_slider': return <ImageSliderRenderer el={element} isDesktop={isDesktop} />;
     case 'video': return <VideoRenderer el={element} isDesktop={isDesktop} autoPlayTrigger={autoPlayTrigger} />;
-    case 'connect_button': return <ConnectButtonRenderer el={element} params={params} isPreview={isPreview} redirectUrl={redirectUrl} campaignId={campaignId} isDesktop={isDesktop} onSimulateConnect={onSimulateConnect} />;
+    case 'connect_button': return <ConnectButtonRenderer el={element} params={params} isPreview={isPreview} redirectUrl={redirectUrl} campaignId={campaignId} isDesktop={isDesktop} onSimulateConnect={onSimulateConnect} portalSessionId={portalSessionId} />;
     case 'spacer': return <SpacerRenderer el={element} isDesktop={isDesktop} />;
     case 'video_gate': return <VideoGateMockupRenderer el={element as VideoGateElement} isDesktop={isDesktop} />;
     case 'attendance_gate': return <AttendanceGateMockupRenderer el={element as AttendanceGateElement} isDesktop={isDesktop} />;
@@ -250,6 +165,7 @@ function ImageSliderRenderer({ el, isDesktop }: { el: ImageSliderElement; isDesk
   const images = isDesktop && el.imagesDesktop && el.imagesDesktop.length > 0 ? el.imagesDesktop : (el.images || []);
   const height = isDesktop && el.heightDesktop ? el.heightDesktop : (el.height || '220px');
   const touchStartX = useRef(0);
+  useEffect(() => setCurrent(0), [isDesktop, el.id, images.length]);
 
   useEffect(() => {
     if (!el.autoplay || images.length <= 1) return;
@@ -480,7 +396,7 @@ function VideoRenderer({ el, isDesktop, autoPlayTrigger }: { el: VideoElement; i
           playsInline
           poster={el.poster || undefined}
           controls={el.controls}
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', background: '#000' }}
+          style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#000' }}
         />
 
         {/* Aspect ratio & video badge indicator */}
@@ -982,6 +898,7 @@ function ConnectButtonRenderer({
   campaignId,
   isDesktop,
   onSimulateConnect,
+  portalSessionId,
 }: {
   el: ConnectButtonElement;
   params: Partial<PortalParams>;
@@ -990,6 +907,7 @@ function ConnectButtonRenderer({
   campaignId?: string;
   isDesktop?: boolean;
   onSimulateConnect?: () => void;
+  portalSessionId?: string;
 }) {
   const [phone, setPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -1033,6 +951,7 @@ function ConnectButtonRenderer({
       if (linkLogin) connectUrl.searchParams.set('link-login', linkLogin);
       if (redirectUrl) connectUrl.searchParams.set('redirectUrl', redirectUrl);
       if (campaignId) connectUrl.searchParams.set('campaignId', campaignId);
+      if (portalSessionId) connectUrl.searchParams.set('portalSessionId', portalSessionId);
 
       setSubmitted(true);
       window.location.href = connectUrl.toString();
@@ -1251,643 +1170,6 @@ function ConnectButtonRenderer({
           <p style={{ fontSize: '12px', color: '#fecaca', textAlign: 'center', marginTop: '8px' }}>
             {errorMessage}
           </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-export function VideoGateRenderer({ el, params, isPreview, forcedDesktop, onDismissed }: { el: VideoGateElement; params: Partial<PortalParams>; isPreview?: boolean; forcedDesktop?: boolean; onDismissed?: () => void }) {
-  const [secondsLeft, setSecondsLeft] = useState(el.skipAfter || 5);
-  const [canSkip, setCanSkip] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-  const [isMuted, setIsMuted] = useState(el.muted ?? true);
-  const [windowDesktop, setWindowDesktop] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    if (!isPreview && forcedDesktop === undefined) {
-      const checkWidth = () => setWindowDesktop(window.innerWidth >= 768);
-      checkWidth();
-      window.addEventListener('resize', checkWidth);
-      return () => window.removeEventListener('resize', checkWidth);
-    }
-  }, [isPreview, forcedDesktop]);
-
-  const isDesktop = forcedDesktop !== undefined ? forcedDesktop : windowDesktop;
-  const theme = getDialogThemeStyles(el.dialogTheme);
-  const effectiveMaxWidth = getDialogMaxWidth(el.dialogSize, el.dialogMaxWidthDesktop, el.dialogMaxWidth, isDesktop);
-
-  const rawRatio = el.aspectRatio || '16:9';
-  const effectiveRatio = (isDesktop && rawRatio === '9:16') ? '16:9' : rawRatio;
-  const aspectMap: Record<string, string> = { '16:9': '16/9', '9:16': '9/16', '4:3': '4/3', 'auto': '16/9' };
-  const isVertical = effectiveRatio === '9:16';
-
-  useEffect(() => {
-    if (secondsLeft <= 0) { setCanSkip(true); return; }
-    const timer = setTimeout(() => setSecondsLeft(s => s - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [secondsLeft]);
-
-  const handleSkip = useCallback(async () => {
-    if (!isPreview) {
-      try {
-        const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-        await fetch('/api/video-complete', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, mac: params.mac || '' }),
-        });
-      } catch {}
-    }
-    setDismissed(true);
-    onDismissed?.();
-  }, [isPreview, params.mac, onDismissed]);
-
-  const toggleMute = () => {
-    const nextMuted = !isMuted;
-    setIsMuted(nextMuted);
-    if (videoRef.current) {
-      videoRef.current.muted = nextMuted;
-    }
-  };
-
-  if (dismissed) return null;
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(5, 10, 20, 0.78)',
-      backdropFilter: el.overlayBlur || 'blur(10px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: '16px',
-    }}>
-      {/* Dialog card */}
-      <div style={{
-        background: theme.cardBg,
-        borderRadius: el.borderRadius || '24px',
-        overflow: 'hidden',
-        width: '100%',
-        maxWidth: effectiveMaxWidth,
-        maxHeight: '94vh',
-        boxShadow: theme.cardBoxShadow,
-        border: theme.cardBorder,
-        display: 'flex',
-        flexDirection: 'column',
-      }}>
-        {/* Dialog header */}
-        <div style={{ padding: isDesktop ? '20px 24px 14px' : '16px 18px 10px', textAlign: 'center' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '11px',
-              fontWeight: 700,
-              color: theme.headerBadgeText,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              background: theme.headerBadgeBg,
-              border: theme.headerBadgeBorder,
-              padding: '3px 12px',
-              borderRadius: '999px',
-              marginBottom: '8px',
-            }}
-          >
-            <span>{theme.ornament} Video Gate Quảng cáo</span>
-          </div>
-          <h2 style={{
-            margin: 0,
-            fontSize: isDesktop ? '21px' : '17px',
-            fontWeight: 700,
-            color: theme.titleColor,
-            textShadow: theme.titleTextShadow,
-            lineHeight: 1.3,
-          }}>
-            {el.dialogTitle || 'Xem video để kết nối WiFi'}
-          </h2>
-          <p style={{
-            margin: '6px 0 0',
-            fontSize: isDesktop ? '14px' : '12px',
-            color: theme.messageColor,
-            lineHeight: 1.45,
-          }}>
-            {el.dialogMessage || 'Vui lòng xem video ngắn trước khi truy cập WiFi tốc độ cao.'}
-          </p>
-        </div>
-
-        {/* Video frame */}
-        <div style={{ padding: '0 16px', display: 'flex', justifyContent: 'center', position: 'relative' }}>
-          <div style={{
-            width: '100%',
-            aspectRatio: aspectMap[effectiveRatio] || '16/9',
-            maxHeight: isVertical ? 'min(500px, 60vh)' : 'min(440px, 55vh)',
-            borderRadius: '16px',
-            overflow: 'hidden',
-            background: '#000',
-            position: 'relative',
-            boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.15)',
-          }}>
-            {el.videoUrl ? (
-              <>
-                <video
-                  ref={videoRef}
-                  src={el.videoUrl}
-                  autoPlay muted={isMuted} playsInline
-                  poster={el.poster || undefined}
-                  style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#000' }}
-                />
-                <button
-                  onClick={toggleMute}
-                  style={{
-                    position: 'absolute', top: '10px', right: '10px',
-                    width: '38px', height: '38px', borderRadius: '50%',
-                    background: 'rgba(0,0,0,0.65)', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: 'white', fontSize: '18px', zIndex: 5,
-                    backdropFilter: 'blur(4px)',
-                  }}
-                  title={isMuted ? 'Bật tiếng' : 'Tắt tiếng'}
-                >
-                  {isMuted ? (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><line x1="23" y1="9" x2="17" y2="15"></line><line x1="17" y1="9" x2="23" y2="15"></line></svg>
-                  ) : (
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
-                  )}
-                </button>
-              </>
-            ) : (
-              <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px', color: '#94a3b8' }}>
-                <div style={{ fontSize: '32px' }}>📹</div>
-                <p style={{ fontSize: '13px', margin: 0, color: '#cbd5e1' }}>Đang chờ video quảng cáo...</p>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Dialog footer */}
-        <div style={{ padding: isDesktop ? '18px 24px 22px' : '14px 18px 18px', textAlign: 'center' }}>
-          {canSkip ? (
-            <button
-              onClick={handleSkip}
-              style={{
-                padding: '13px 32px',
-                background: theme.buttonBg,
-                color: theme.buttonColor,
-                border: theme.buttonBorder,
-                borderRadius: '12px',
-                fontWeight: 700,
-                fontSize: isDesktop ? '15px' : '14px',
-                cursor: 'pointer',
-                width: '100%',
-                boxShadow: theme.buttonShadow,
-                transition: 'transform 0.15s ease, filter 0.15s ease',
-              }}
-            >
-              Tiếp tục kết nối WiFi →
-            </button>
-          ) : (
-            <div>
-              <div style={{
-                display: 'inline-flex',
-                alignItems: 'center', justifyContent: 'center',
-                gap: '10px',
-                padding: '10px 22px',
-                background: theme.waitBadgeBg,
-                border: theme.waitBadgeBorder,
-                borderRadius: '12px',
-                color: theme.waitBadgeText,
-                fontSize: '13px',
-                fontWeight: 600,
-              }}>
-                <div style={{
-                  width: '30px', height: '30px', borderRadius: '50%',
-                  background: theme.waitCounterBg, color: theme.waitCounterText,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '15px', fontWeight: 800,
-                }}>
-                  {secondsLeft}
-                </div>
-                <span>Đợi {secondsLeft}s để tiếp tục kết nối WiFi</span>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function AnnouncementRenderer({ el, params, isPreview, forcedDesktop, onDismissed }: { el: AnnouncementElement; params: Partial<PortalParams>; isPreview?: boolean; forcedDesktop?: boolean; onDismissed?: () => void }) {
-  const [secondsLeft, setSecondsLeft] = useState(el.skipAfter || 5);
-  const [canDismiss, setCanDismiss] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
-  const [windowDesktop, setWindowDesktop] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    if (!isPreview && forcedDesktop === undefined) {
-      const checkWidth = () => setWindowDesktop(window.innerWidth >= 768);
-      checkWidth();
-      window.addEventListener('resize', checkWidth);
-      return () => window.removeEventListener('resize', checkWidth);
-    }
-  }, [isPreview, forcedDesktop]);
-
-  const isDesktop = forcedDesktop !== undefined ? forcedDesktop : windowDesktop;
-  const theme = getDialogThemeStyles(el.dialogTheme);
-  const effectiveMaxWidth = getDialogMaxWidth(el.dialogSize, el.dialogMaxWidthDesktop, el.dialogMaxWidth, isDesktop);
-
-  useEffect(() => {
-    if (secondsLeft <= 0) { setCanDismiss(true); return; }
-    const timer = setTimeout(() => setSecondsLeft(s => s - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [secondsLeft]);
-
-  // Auto-start video when announcement renders
-  useEffect(() => {
-    if (!el.videoUrl) return;
-    const v = videoRef.current;
-    if (!v) return;
-    v.muted = true;
-    const playPromise = v.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(() => {});
-    }
-  }, [el.videoUrl]);
-
-  const handleDismiss = async () => {
-    if (!canDismiss) return;
-    try {
-      const sessionId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      await fetch('/api/video-complete', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, mac: params.mac || '', type: 'announcement' }),
-      });
-    } catch {}
-    setDismissed(true);
-    onDismissed?.();
-  };
-
-  if (dismissed) return null;
-
-  const titleStyle: React.CSSProperties = {
-    fontSize: el.titleFontSize || (isDesktop ? '21px' : '18px'),
-    fontWeight: el.titleBold ? 700 : 600,
-    fontStyle: el.titleItalic ? 'italic' : 'normal',
-    color: el.titleColor || theme.titleColor,
-    textShadow: theme.titleTextShadow,
-    marginBottom: '10px',
-    lineHeight: 1.3,
-    display: 'block',
-  };
-
-  const messageStyle: React.CSSProperties = {
-    fontSize: el.messageFontSize || (isDesktop ? '14px' : '13px'),
-    fontWeight: el.messageBold ? 600 : 400,
-    fontStyle: el.messageItalic ? 'italic' : 'normal',
-    color: el.messageColor || theme.messageColor,
-    lineHeight: 1.6,
-    marginBottom: '20px',
-    display: 'block',
-  };
-
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 9999,
-      background: 'rgba(5, 10, 20, 0.78)',
-      backdropFilter: el.overlayBlur || 'blur(10px)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: '16px',
-    }}>
-      <div style={{
-        background: el.bgColor || theme.cardBg,
-        borderRadius: el.borderRadius || '24px',
-        overflow: 'hidden',
-        width: '100%',
-        maxWidth: effectiveMaxWidth,
-        maxHeight: '94vh',
-        boxShadow: theme.cardBoxShadow,
-        border: theme.cardBorder,
-        display: 'flex',
-        flexDirection: 'column',
-      }}>
-        {el.videoUrl && (
-          <div style={{ aspectRatio: '16/9', maxHeight: 'min(440px, 50vh)', background: '#000', overflow: 'hidden' }}>
-            <video
-              ref={videoRef}
-              src={el.videoUrl}
-              playsInline
-              muted
-              loop
-              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#000' }}
-            />
-          </div>
-        )}
-        {!el.videoUrl && el.imageUrl && (
-          <div style={{ width: '100%', maxHeight: 'min(300px, 40vh)', overflow: 'hidden' }}>
-            <img src={el.imageUrl} alt={el.title} style={{ width: '100%', height: '100%', maxHeight: '300px', objectFit: 'cover', display: 'block' }} />
-          </div>
-        )}
-        <div style={{ padding: isDesktop ? '24px' : '18px 20px', textAlign: 'center' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '5px',
-              fontSize: '11px',
-              fontWeight: 700,
-              color: theme.headerBadgeText,
-              textTransform: 'uppercase',
-              background: theme.headerBadgeBg,
-              border: theme.headerBadgeBorder,
-              padding: '3px 10px',
-              borderRadius: '999px',
-              marginBottom: '10px',
-            }}
-          >
-            <span>{theme.ornament} Thông báo ưu đãi</span>
-          </div>
-          <span style={titleStyle}>{el.title}</span>
-          <span style={messageStyle}>{el.message}</span>
-          {canDismiss ? (
-            <button
-              onClick={handleDismiss}
-              style={{
-                width: '100%', padding: '13px',
-                background: el.buttonBgColor || theme.buttonBg,
-                color: el.buttonTextColor || theme.buttonColor,
-                border: theme.buttonBorder, borderRadius: '12px',
-                fontSize: '15px', fontWeight: 700, cursor: 'pointer',
-                boxShadow: theme.buttonShadow,
-              }}
-            >
-              {el.buttonText || 'Tiếp tục'}
-            </button>
-          ) : (
-            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px 22px', background: theme.waitBadgeBg, border: theme.waitBadgeBorder, color: theme.waitBadgeText, borderRadius: '12px', fontSize: '13px', fontWeight: 600 }}>
-              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: theme.waitCounterBg, color: theme.waitCounterText, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', fontWeight: 800 }}>{secondsLeft}</div>
-              <span>Đợi {secondsLeft}s để đóng...</span>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export function AttendanceGateRenderer({
-  el,
-  params,
-  campaignId,
-  redirectUrl,
-  onDismissed,
-}: {
-  el: AttendanceGateElement;
-  params: Partial<PortalParams>;
-  campaignId?: string;
-  redirectUrl?: string;
-  onDismissed?: () => void;
-}) {
-  const [fullName, setFullName] = useState('');
-  const [department, setDepartment] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [windowDesktop, setWindowDesktop] = useState(false);
-
-  useEffect(() => {
-    const checkWidth = () => setWindowDesktop(window.innerWidth >= 768);
-    checkWidth();
-    window.addEventListener('resize', checkWidth);
-    return () => window.removeEventListener('resize', checkWidth);
-  }, []);
-
-  const isDesktop = windowDesktop;
-  const theme = getDialogThemeStyles(el.dialogTheme);
-  const effectiveMaxWidth = getDialogMaxWidth(el.dialogSize, el.dialogMaxWidthDesktop, el.dialogMaxWidth, isDesktop);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!fullName.trim()) {
-      setError('Vui lòng nhập Họ và tên');
-      return;
-    }
-    if (!department.trim()) {
-      setError('Vui lòng nhập Phòng ban / Đơn vị');
-      return;
-    }
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const res = await fetch('/api/attendance/portal/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          campaignId,
-          ssid: params.ssid,
-          mac: params.mac,
-          ip: params.ip,
-          answers: {
-            fullname: fullName.trim(),
-            department: department.trim(),
-          },
-          trial: (params as any)?.trial,
-          linkLogin: (params as any)?.['link-login'],
-        }),
-      });
-
-      const json = await res.json();
-      if (json.success) {
-        setSuccess(true);
-        setTimeout(() => {
-          onDismissed?.();
-        }, 3000);
-      } else {
-        setError(json.error || 'Điểm danh không thành công.');
-      }
-    } catch {
-      setError('Lỗi kết nối máy chủ. Vui lòng thử lại.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 9998,
-        background: 'rgba(5, 10, 20, 0.82)',
-        backdropFilter: el.overlayBlur || 'blur(12px)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '16px',
-      }}
-    >
-      <div
-        style={{
-          background: theme.cardBg,
-          borderRadius: el.borderRadius || '24px',
-          overflow: 'hidden',
-          width: '100%',
-          maxWidth: effectiveMaxWidth,
-          maxHeight: '94vh',
-          boxShadow: theme.cardBoxShadow,
-          border: theme.cardBorder,
-          display: 'flex',
-          flexDirection: 'column',
-          textAlign: 'center',
-        }}
-      >
-        <div style={{ padding: isDesktop ? '24px 28px 12px' : '20px 20px 10px' }}>
-          <div
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '6px',
-              fontSize: '11px',
-              fontWeight: 700,
-              color: theme.headerBadgeText,
-              textTransform: 'uppercase',
-              letterSpacing: '0.06em',
-              background: theme.headerBadgeBg,
-              border: theme.headerBadgeBorder,
-              padding: '3px 12px',
-              borderRadius: '999px',
-              marginBottom: '10px',
-            }}
-          >
-            <span>{theme.ornament} Điểm danh cuộc họp</span>
-          </div>
-
-          <h2
-            style={{
-              margin: 0,
-              fontSize: isDesktop ? '20px' : '17px',
-              fontWeight: 700,
-              color: theme.titleColor,
-              textShadow: theme.titleTextShadow,
-              lineHeight: 1.3,
-            }}
-          >
-            {el.dialogTitle || 'Điểm danh cuộc họp'}
-          </h2>
-
-          <p
-            style={{
-              margin: '6px 0 0',
-              fontSize: isDesktop ? '13px' : '12px',
-              color: theme.messageColor,
-              lineHeight: 1.45,
-            }}
-          >
-            {el.dialogMessage || 'Vui lòng nhập thông tin để xác thực điểm danh và nhận quyền truy cập WiFi.'}
-          </p>
-        </div>
-
-        {success ? (
-          <div style={{ padding: '32px 24px', color: '#10b981' }}>
-            <div style={{ fontSize: '36px', marginBottom: '8px' }}>✅</div>
-            <h3 style={{ fontSize: '17px', fontWeight: 800, color: theme.titleColor }}>Điểm danh thành công!</h3>
-            <p style={{ fontSize: '13px', color: theme.messageColor, marginTop: '4px' }}>
-              {el.successMessage || 'Đang cấp quyền truy cập Internet...'}
-            </p>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} style={{ padding: isDesktop ? '12px 28px 24px' : '10px 20px 20px', textAlign: 'left' }}>
-            {error && (
-              <div
-                style={{
-                  padding: '10px 14px',
-                  borderRadius: '10px',
-                  background: 'rgba(239, 68, 68, 0.15)',
-                  border: '1px solid rgba(239, 68, 68, 0.4)',
-                  color: '#f87171',
-                  fontSize: '12px',
-                  marginBottom: '14px',
-                }}
-              >
-                {error}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '18px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: theme.titleColor, marginBottom: '5px' }}>
-                  {el.nameLabel || 'Họ và tên'} <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder={el.namePlaceholder || 'VD: Nguyễn Văn A'}
-                  style={{
-                    width: '100%',
-                    padding: '11px 14px',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    background: theme.isDark ? 'rgba(0,0,0,0.35)' : '#ffffff',
-                    color: theme.isDark ? '#ffffff' : '#0f172a',
-                    fontSize: '13px',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: theme.titleColor, marginBottom: '5px' }}>
-                  {el.departmentLabel || 'Phòng ban / Đơn vị'} <span style={{ color: '#ef4444' }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={department}
-                  onChange={(e) => setDepartment(e.target.value)}
-                  placeholder={el.departmentPlaceholder || 'VD: Ban Biên tập Chính trị'}
-                  style={{
-                    width: '100%',
-                    padding: '11px 14px',
-                    borderRadius: '12px',
-                    border: '1px solid rgba(255,255,255,0.25)',
-                    background: theme.isDark ? 'rgba(0,0,0,0.35)' : '#ffffff',
-                    color: theme.isDark ? '#ffffff' : '#0f172a',
-                    fontSize: '13px',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                  }}
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              style={{
-                width: '100%',
-                padding: '13px 24px',
-                background: theme.buttonBg,
-                color: theme.buttonColor,
-                border: theme.buttonBorder,
-                borderRadius: '12px',
-                fontWeight: 700,
-                fontSize: '14px',
-                cursor: loading ? 'not-allowed' : 'pointer',
-                opacity: loading ? 0.7 : 1,
-                boxShadow: theme.buttonShadow,
-                transition: 'transform 0.15s ease, filter 0.15s ease',
-              }}
-            >
-              {loading ? 'Đang xác nhận...' : el.buttonText || 'Xác nhận điểm danh & Kết nối'}
-            </button>
-          </form>
         )}
       </div>
     </div>

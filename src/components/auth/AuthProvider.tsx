@@ -2,14 +2,18 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { api } from '@/lib/api';
+import { type AdminRole, isAdminRole, hasPermission } from '@/lib/permissions';
 
 interface AuthState {
   token: string | null;
   username: string | null;
   loading: boolean;
+  role: AdminRole;
 }
 
 interface AuthContextType extends AuthState {
+  canOperate: boolean;
+  canAdmin: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -46,6 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     token: null,
     username: null,
     loading: true,
+    role: 'VIEWER',
   });
 
   useEffect(() => {
@@ -55,20 +60,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (isTokenExpired(token)) {
       localStorage.removeItem('token');
       localStorage.removeItem('username');
-      setState({ token: null, username: null, loading: false });
+      setState({ token: null, username: null, loading: false, role: 'VIEWER' });
       return;
     }
 
     setState({
       token,
       username,
-      loading: false,
+      loading: true,
+      role: 'VIEWER',
     });
+    let active = true;
+    api.get<{data:{role:AdminRole;username:string}}>('/api/auth/me', token || undefined).then(res => {
+      if(active && isAdminRole(res.data?.role)) setState(current => ({...current, role:res.data.role,username:res.data.username}));
+    }).catch(() => {}).finally(() => {if(active)setState(current=>({...current,loading:false}));});
+    return () => {active=false;};
   }, []);
 
   useEffect(() => {
     const handleUnauthorized = () => {
-      setState({ token: null, username: null, loading: false });
+      setState({ token: null, username: null, loading: false, role: 'VIEWER' });
     };
 
     window.addEventListener('auth:unauthorized', handleUnauthorized);
@@ -78,13 +89,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    const res = await api.post<{ success: boolean; data: { token: string; username: string } }>(
+    const res = await api.post<{ success: boolean; data: { token: string; username: string; role:AdminRole } }>(
       '/api/auth/login',
       { username, password }
     );
     localStorage.setItem('token', res.data.token);
     localStorage.setItem('username', res.data.username);
-    setState({ token: res.data.token, username: res.data.username, loading: false });
+    setState({ token: res.data.token, username: res.data.username, loading: false, role:isAdminRole(res.data.role)?res.data.role:'VIEWER' });
   }, []);
 
   const logout = useCallback(async () => {
@@ -93,11 +104,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
     localStorage.removeItem('token');
     localStorage.removeItem('username');
-    setState({ token: null, username: null, loading: false });
+    setState({ token: null, username: null, loading: false, role: 'VIEWER' });
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, logout }}>
+    <AuthContext.Provider value={{ ...state, canOperate:hasPermission(state.role, 'operate'),canAdmin:hasPermission(state.role, 'admin'), login, logout }}>
       {children}
     </AuthContext.Provider>
   );

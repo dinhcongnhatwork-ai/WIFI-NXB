@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
     }
 
     const admin = await prisma.admin.findUnique({ where: { username } });
-    if (!admin) {
+    if (!admin || admin.disabled) {
       return NextResponse.json(
         { success: false, error: 'Invalid credentials' },
         { status: 401 }
@@ -30,11 +30,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const token = signToken({ id: admin.id, username: admin.username });
+    const token = signToken({ id: admin.id, username: admin.username, role: admin.role });
 
     const response = NextResponse.json({
       success: true,
-      data: { token, username: admin.username },
+      data: { token, username: admin.username, role: admin.role },
     });
 
     response.cookies.set('token', token, {

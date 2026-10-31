@@ -1,5 +1,8 @@
 # Hướng Dẫn Cấu Hình MikroTik Hotspot - Captive Portal WiFi Marketing
 
+> **Cập nhật 24/10/2026:** Domain hiện tại là `https://solutionai.com.vn`, qua Cloudflare Tunnel do người vận hành quản lý. Dùng [hướng dẫn domain mới](docs/solutionai-domain-deployment.md), file `login.html` và `deploy/mikrotik-solutionai.rsc`. Các địa chỉ `wifi.jtsc.vn`, proxy và IP bên dưới là cấu hình lịch sử; không áp dụng DNS static cũ cho domain mới.
+
+
 > **Cập nhật:** 16/04/2026  
 > **Hệ thống:** WiFi Marketing Platform + MikroTik RouterOS
 

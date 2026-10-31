@@ -1,7 +1,8 @@
-'use client';
+"use client";
+import { networkFetch } from "@/components/network/client";
 
-import { useEffect, useState, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { useEffect, useState, useCallback } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   Network,
   RefreshCw,
@@ -21,7 +22,7 @@ import {
   ChevronDown,
   MoreVertical,
   Zap,
-} from 'lucide-react';
+} from "lucide-react";
 
 interface UnifiNetwork {
   _id: string;
@@ -50,7 +51,7 @@ interface UserGroup {
 
 interface TopologyNode {
   id: string;
-  type: 'gateway' | 'switch' | 'ap' | 'network' | 'client';
+  type: "gateway" | "switch" | "ap" | "network" | "client";
   name: string;
   status?: string;
   mac?: string;
@@ -60,7 +61,7 @@ interface TopologyNode {
 interface TopologyLink {
   source: string;
   target: string;
-  type: 'uplink' | 'wired' | 'wireless' | 'network';
+  type: "uplink" | "wired" | "wireless" | "network";
 }
 
 interface TopologyData {
@@ -81,22 +82,27 @@ export default function UnifiNetworksPage() {
   const [topology, setTopology] = useState<TopologyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'networks' | 'usergroups'>('networks');
+  const [activeTab, setActiveTab] = useState<"networks" | "usergroups">(
+    "networks",
+  );
   const [createModal, setCreateModal] = useState(false);
-  const [editModal, setEditModal] = useState<{ open: boolean; network: UnifiNetwork | null }>({ open: false, network: null });
+  const [editModal, setEditModal] = useState<{
+    open: boolean;
+    network: UnifiNetwork | null;
+  }>({ open: false, network: null });
 
   const [formData, setFormData] = useState({
-    name: '',
-    purpose: 'corporate',
+    name: "",
+    purpose: "corporate",
     vlanEnabled: false,
-    vlanId: '',
-    ipSubnet: '',
-    ipSubnetGw: '',
+    vlanId: "",
+    ipSubnet: "",
+    ipSubnetGw: "",
     dhcpdEnabled: true,
-    dhcpdStart: '',
-    dhcpdStop: '',
+    dhcpdStart: "",
+    dhcpdStop: "",
     dhcpdLease: 86400,
-    domainName: '',
+    domainName: "",
     enabled: true,
     isNat: true,
   });
@@ -105,11 +111,11 @@ export default function UnifiNetworksPage() {
     try {
       setLoading(true);
       setError(null);
-      
+
       const [networksRes, groupsRes, topologyRes] = await Promise.all([
-        fetch('/api/unifi/settings?type=networks'),
-        fetch('/api/unifi/settings?type=usergroups'),
-        fetch('/api/unifi/settings?type=topology'),
+        networkFetch("/api/unifi/settings?type=networks"),
+        networkFetch("/api/unifi/settings?type=usergroups"),
+        networkFetch("/api/unifi/settings?type=topology"),
       ]);
 
       const [networksJson, groupsJson, topologyJson] = await Promise.all([
@@ -128,7 +134,7 @@ export default function UnifiNetworksPage() {
         setTopology(topologyJson.data);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Connection error');
+      setError(err instanceof Error ? err.message : "Connection error");
     } finally {
       setLoading(false);
     }
@@ -141,8 +147,8 @@ export default function UnifiNetworksPage() {
   const handleCreateNetwork = async () => {
     try {
       const payload = {
-        type: 'network',
-        action: 'create',
+        type: "network",
+        action: "create",
         name: formData.name,
         purpose: formData.purpose,
         vlanEnabled: formData.vlanEnabled,
@@ -158,9 +164,9 @@ export default function UnifiNetworksPage() {
         isNat: formData.isNat,
       };
 
-      const res = await fetch('/api/unifi/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await networkFetch("/api/unifi/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const json = await res.json();
@@ -170,47 +176,47 @@ export default function UnifiNetworksPage() {
         setCreateModal(false);
         resetForm();
       } else {
-        alert(json.error || 'Failed to create network');
+        alert(json.error || "Failed to create network");
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create network');
+      alert(err instanceof Error ? err.message : "Failed to create network");
     }
   };
 
   const handleDeleteNetwork = async (id: string) => {
-    if (!confirm('Xóa network này?')) return;
-    
+    if (!confirm("Xóa network này?")) return;
+
     try {
-      const res = await fetch('/api/unifi/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'network', action: 'delete', id }),
+      const res = await networkFetch("/api/unifi/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "network", action: "delete", id }),
       });
       const json = await res.json();
 
       if (json.success) {
         await fetchData();
       } else {
-        alert(json.error || 'Failed to delete network');
+        alert(json.error || "Failed to delete network");
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete network');
+      alert(err instanceof Error ? err.message : "Failed to delete network");
     }
   };
 
   const resetForm = () => {
     setFormData({
-      name: '',
-      purpose: 'corporate',
+      name: "",
+      purpose: "corporate",
       vlanEnabled: false,
-      vlanId: '',
-      ipSubnet: '',
-      ipSubnetGw: '',
+      vlanId: "",
+      ipSubnet: "",
+      ipSubnetGw: "",
       dhcpdEnabled: true,
-      dhcpdStart: '',
-      dhcpdStop: '',
+      dhcpdStart: "",
+      dhcpdStop: "",
       dhcpdLease: 86400,
-      domainName: '',
+      domainName: "",
       enabled: true,
       isNat: true,
     });
@@ -221,14 +227,14 @@ export default function UnifiNetworksPage() {
       name: network.name,
       purpose: network.purpose,
       vlanEnabled: network.vlanEnabled || false,
-      vlanId: network.vlanId?.toString() || '',
-      ipSubnet: network.ipSubnet || '',
-      ipSubnetGw: network.ipSubnetGw || '',
+      vlanId: network.vlanId?.toString() || "",
+      ipSubnet: network.ipSubnet || "",
+      ipSubnetGw: network.ipSubnetGw || "",
       dhcpdEnabled: network.dhcpdEnabled ?? true,
-      dhcpdStart: network.dhcpdStart || '',
-      dhcpdStop: network.dhcpdStop || '',
+      dhcpdStart: network.dhcpdStart || "",
+      dhcpdStop: network.dhcpdStop || "",
       dhcpdLease: network.dhcpdLease || 86400,
-      domainName: network.domainName || '',
+      domainName: network.domainName || "",
       enabled: network.enabled,
       isNat: network.isNat ?? true,
     });
@@ -240,8 +246,8 @@ export default function UnifiNetworksPage() {
 
     try {
       const payload = {
-        type: 'network',
-        action: 'update',
+        type: "network",
+        action: "update",
         id: editModal.network._id,
         name: formData.name,
         purpose: formData.purpose,
@@ -258,9 +264,9 @@ export default function UnifiNetworksPage() {
         isNat: formData.isNat,
       };
 
-      const res = await fetch('/api/unifi/settings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await networkFetch("/api/unifi/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const json = await res.json();
@@ -270,19 +276,19 @@ export default function UnifiNetworksPage() {
         setEditModal({ open: false, network: null });
         resetForm();
       } else {
-        alert(json.error || 'Failed to update network');
+        alert(json.error || "Failed to update network");
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update network');
+      alert(err instanceof Error ? err.message : "Failed to update network");
     }
   };
 
   const getPurposeLabel = (purpose: string) => {
     const labels: Record<string, string> = {
-      corporate: 'Corporate',
-      guest: 'Guest',
-      wan: 'WAN',
-      lan: 'LAN',
+      corporate: "Corporate",
+      guest: "Guest",
+      wan: "WAN",
+      lan: "LAN",
     };
     return labels[purpose] || purpose;
   };
@@ -301,7 +307,7 @@ export default function UnifiNetworksPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-3 border-purple-600 border-t-transparent rounded-full animate-spin" />
+          <div className="w-10 h-10 border-3 border-blue-600 border-t-transparent rounded-full animate-spin" />
           <p className="text-slate-500 text-sm">Đang tải mạng...</p>
         </div>
       </div>
@@ -314,7 +320,9 @@ export default function UnifiNetworksPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Mạng</h1>
-          <p className="text-slate-500 text-sm mt-1">Quản lý networks & VLANs</p>
+          <p className="text-slate-500 text-sm mt-1">
+            Quản lý networks & VLANs
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -322,13 +330,13 @@ export default function UnifiNetworksPage() {
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors text-sm"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
             Làm mới
           </button>
-          {activeTab === 'networks' && (
+          {activeTab === "networks" && (
             <button
               onClick={() => setCreateModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
             >
               <Plus className="w-4 h-4" />
               Tạo Network
@@ -340,41 +348,47 @@ export default function UnifiNetworksPage() {
       {/* Tabs */}
       <div className="flex gap-4 mb-6">
         <button
-          onClick={() => setActiveTab('networks')}
+          onClick={() => setActiveTab("networks")}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            activeTab === 'networks'
-              ? 'bg-purple-600 text-white'
-              : 'bg-white text-slate-600 hover:bg-slate-100'
+            activeTab === "networks"
+              ? "bg-blue-600 text-white"
+              : "bg-white text-slate-600 hover:bg-slate-100"
           }`}
         >
           Networks
         </button>
         <button
-          onClick={() => setActiveTab('usergroups')}
+          onClick={() => setActiveTab("usergroups")}
           className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-            activeTab === 'usergroups'
-              ? 'bg-purple-600 text-white'
-              : 'bg-white text-slate-600 hover:bg-slate-100'
+            activeTab === "usergroups"
+              ? "bg-blue-600 text-white"
+              : "bg-white text-slate-600 hover:bg-slate-100"
           }`}
         >
           User Groups
         </button>
       </div>
 
-      {activeTab === 'networks' ? (
+      {activeTab === "networks" ? (
         <>
           {/* Stats */}
           <div className="grid grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-              <p className="text-2xl font-bold text-slate-900">{networks.length}</p>
+              <p className="text-2xl font-bold text-slate-900">
+                {networks.length}
+              </p>
               <p className="text-xs text-slate-500">Tổng Networks</p>
             </div>
             <div className="bg-white rounded-xl border border-green-200 p-4 text-center">
-              <p className="text-2xl font-bold text-green-600">{networks.filter(n => n.enabled).length}</p>
+              <p className="text-2xl font-bold text-green-600">
+                {networks.filter((n) => n.enabled).length}
+              </p>
               <p className="text-xs text-slate-500">Active</p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
-              <p className="text-2xl font-bold text-slate-900">{networks.filter(n => n.vlanEnabled).length}</p>
+              <p className="text-2xl font-bold text-slate-900">
+                {networks.filter((n) => n.vlanEnabled).length}
+              </p>
               <p className="text-xs text-slate-500">VLAN</p>
             </div>
             <div className="bg-white rounded-xl border border-slate-200 p-4 text-center">
@@ -389,8 +403,12 @@ export default function UnifiNetworksPage() {
           <div className="bg-white rounded-xl border border-slate-200 p-5 mb-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Network Topology</h2>
-                <p className="text-sm text-slate-500">Sơ đồ kết nối lấy trực tiếp từ UniFi Controller</p>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  Network Topology
+                </h2>
+                <p className="text-sm text-slate-500">
+                  Sơ đồ kết nối lấy trực tiếp từ UniFi Controller
+                </p>
               </div>
               <span className="inline-flex items-center px-2.5 py-1 text-xs font-medium rounded-full bg-blue-50 text-blue-700">
                 {topology?.nodes.length || 0} nodes
@@ -398,25 +416,35 @@ export default function UnifiNetworksPage() {
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-              <div className="rounded-lg border border-purple-100 bg-purple-50 p-3">
-                <p className="text-xs text-purple-700">Gateway</p>
-                <p className="text-xl font-semibold text-purple-900">{topology?.summary.gateways || 0}</p>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <p className="text-xs text-slate-500">Gateway</p>
+                <p className="text-xl font-semibold text-slate-900">
+                  {topology?.summary.gateways || 0}
+                </p>
               </div>
-              <div className="rounded-lg border border-blue-100 bg-blue-50 p-3">
-                <p className="text-xs text-blue-700">Switch</p>
-                <p className="text-xl font-semibold text-blue-900">{topology?.summary.switches || 0}</p>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <p className="text-xs text-slate-500">Switch</p>
+                <p className="text-xl font-semibold text-slate-900">
+                  {topology?.summary.switches || 0}
+                </p>
               </div>
-              <div className="rounded-lg border border-emerald-100 bg-emerald-50 p-3">
-                <p className="text-xs text-emerald-700">Access Point</p>
-                <p className="text-xl font-semibold text-emerald-900">{topology?.summary.accessPoints || 0}</p>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <p className="text-xs text-slate-500">Access Point</p>
+                <p className="text-xl font-semibold text-slate-900">
+                  {topology?.summary.accessPoints || 0}
+                </p>
               </div>
-              <div className="rounded-lg border border-amber-100 bg-amber-50 p-3">
-                <p className="text-xs text-amber-700">Networks</p>
-                <p className="text-xl font-semibold text-amber-900">{topology?.summary.networks || 0}</p>
+              <div className="rounded-lg border border-slate-200 bg-white p-3">
+                <p className="text-xs text-slate-500">Networks</p>
+                <p className="text-xl font-semibold text-slate-900">
+                  {topology?.summary.networks || 0}
+                </p>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                 <p className="text-xs text-slate-700">Clients</p>
-                <p className="text-xl font-semibold text-slate-900">{topology?.summary.clients || 0}</p>
+                <p className="text-xl font-semibold text-slate-900">
+                  {topology?.summary.clients || 0}
+                </p>
               </div>
             </div>
 
@@ -427,17 +455,33 @@ export default function UnifiNetworksPage() {
               <div className="max-h-72 overflow-auto divide-y divide-slate-100">
                 {topology && topology.links.length > 0 ? (
                   topology.links.slice(0, 200).map((link, idx) => {
-                    const source = topology.nodes.find((node) => node.id === link.source);
-                    const target = topology.nodes.find((node) => node.id === link.target);
+                    const source = topology.nodes.find(
+                      (node) => node.id === link.source,
+                    );
+                    const target = topology.nodes.find(
+                      (node) => node.id === link.target,
+                    );
                     return (
-                      <div key={`${link.source}-${link.target}-${idx}`} className="px-4 py-2.5 text-sm flex items-center justify-between gap-3">
+                      <div
+                        key={`${link.source}-${link.target}-${idx}`}
+                        className="px-4 py-2.5 text-sm flex items-center justify-between gap-3"
+                      >
                         <div className="min-w-0">
-                          <p className="font-medium text-slate-800 truncate">{source?.name || link.source}</p>
-                          <p className="text-xs text-slate-500 truncate">{source?.type || 'node'} -&gt; {target?.type || 'node'}</p>
+                          <p className="font-medium text-slate-800 truncate">
+                            {source?.name || link.source}
+                          </p>
+                          <p className="text-xs text-slate-500 truncate">
+                            {source?.type || "node"} -&gt;{" "}
+                            {target?.type || "node"}
+                          </p>
                         </div>
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">{link.type}</span>
-                          <p className="text-sm text-slate-700 truncate max-w-[220px]">{target?.name || link.target}</p>
+                          <span className="text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                            {link.type}
+                          </span>
+                          <p className="text-sm text-slate-700 truncate max-w-[220px]">
+                            {target?.name || link.target}
+                          </p>
                         </div>
                       </div>
                     );
@@ -460,26 +504,40 @@ export default function UnifiNetworksPage() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 className={`bg-white rounded-xl border overflow-hidden ${
-                  network.enabled ? 'border-slate-200' : 'border-slate-300 opacity-75'
+                  network.enabled
+                    ? "border-slate-200"
+                    : "border-slate-300 opacity-75"
                 }`}
               >
                 <div className="p-5">
                   <div className="flex items-start justify-between">
                     <div className="flex items-center gap-4">
-                      <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
-                        network.enabled ? 'bg-blue-100' : 'bg-slate-100'
-                      }`}>
-                        <div className={network.enabled ? 'text-blue-600' : 'text-slate-400'}>
+                      <div
+                        className={`w-12 h-12 rounded-xl flex items-center justify-center ${
+                          network.enabled ? "bg-blue-100" : "bg-slate-100"
+                        }`}
+                      >
+                        <div
+                          className={
+                            network.enabled ? "text-blue-600" : "text-slate-400"
+                          }
+                        >
                           {getPurposeIcon(network.purpose)}
                         </div>
                       </div>
                       <div>
                         <div className="flex items-center gap-3">
-                          <h3 className="text-lg font-semibold text-slate-900">{network.name}</h3>
-                          <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
-                            network.enabled ? 'bg-green-100 text-green-700' : 'bg-slate-200 text-slate-600'
-                          }`}>
-                            {network.enabled ? 'Active' : 'Disabled'}
+                          <h3 className="text-lg font-semibold text-slate-900">
+                            {network.name}
+                          </h3>
+                          <span
+                            className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                              network.enabled
+                                ? "bg-green-100 text-green-700"
+                                : "bg-slate-200 text-slate-600"
+                            }`}
+                          >
+                            {network.enabled ? "Active" : "Disabled"}
                           </span>
                           <span className="px-2 py-0.5 text-xs font-medium bg-slate-100 text-slate-600 rounded-full">
                             {getPurposeLabel(network.purpose)}
@@ -492,7 +550,9 @@ export default function UnifiNetworksPage() {
                         </div>
                         <div className="flex items-center gap-4 mt-1 text-sm text-slate-500">
                           {network.ipSubnet && (
-                            <span className="font-mono">{network.ipSubnet}</span>
+                            <span className="font-mono">
+                              {network.ipSubnet}
+                            </span>
                           )}
                           {network.dhcpdEnabled && (
                             <span className="flex items-center gap-1">
@@ -527,11 +587,13 @@ export default function UnifiNetworksPage() {
           {networks.length === 0 && !loading && (
             <div className="bg-white rounded-xl border border-slate-200 p-12 text-center">
               <Network className="w-16 h-16 text-slate-300 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-slate-700 mb-2">Không có network nào</h3>
+              <h3 className="text-lg font-medium text-slate-700 mb-2">
+                Không có network nào
+              </h3>
               <p className="text-slate-500 mb-4">Tạo network mới để bắt đầu</p>
               <button
                 onClick={() => setCreateModal(true)}
-                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 Tạo Network
               </button>
@@ -545,27 +607,42 @@ export default function UnifiNetworksPage() {
             <table className="w-full">
               <thead>
                 <tr className="bg-slate-50">
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Name</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Download</th>
-                  <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">Upload</th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">
+                    Name
+                  </th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">
+                    Download
+                  </th>
+                  <th className="text-left px-5 py-3 text-xs font-semibold text-slate-500 uppercase">
+                    Upload
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {userGroups.map((group) => (
-                  <tr key={group._id} className="hover:bg-slate-50 transition-colors">
+                  <tr
+                    key={group._id}
+                    className="hover:bg-slate-50 transition-colors"
+                  >
                     <td className="px-5 py-4">
-                      <span className="font-medium text-slate-900">{group.name}</span>
+                      <span className="font-medium text-slate-900">
+                        {group.name}
+                      </span>
                     </td>
                     <td className="px-5 py-4">
                       {group.bandwidthPolicyDown ? (
-                        <span className="text-slate-700">{group.bandwidthPolicyDown} Kbps</span>
+                        <span className="text-slate-700">
+                          {group.bandwidthPolicyDown} Kbps
+                        </span>
                       ) : (
                         <span className="text-slate-400">Unlimited</span>
                       )}
                     </td>
                     <td className="px-5 py-4">
                       {group.bandwidthPolicyUp ? (
-                        <span className="text-slate-700">{group.bandwidthPolicyUp} Kbps</span>
+                        <span className="text-slate-700">
+                          {group.bandwidthPolicyUp} Kbps
+                        </span>
                       ) : (
                         <span className="text-slate-400">Unlimited</span>
                       )}
@@ -574,7 +651,10 @@ export default function UnifiNetworksPage() {
                 ))}
                 {userGroups.length === 0 && (
                   <tr>
-                    <td colSpan={3} className="px-5 py-8 text-center text-slate-400">
+                    <td
+                      colSpan={3}
+                      className="px-5 py-8 text-center text-slate-400"
+                    >
                       Không có user group nào
                     </td>
                   </tr>
@@ -603,30 +683,43 @@ export default function UnifiNetworksPage() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900">Tạo Network mới</h3>
-                <button onClick={() => setCreateModal(false)} className="p-2 hover:bg-slate-100 rounded-lg">
+                <h3 className="text-lg font-semibold text-slate-900">
+                  Tạo Network mới
+                </h3>
+                <button
+                  onClick={() => setCreateModal(false)}
+                  className="p-2 hover:bg-slate-100 rounded-lg"
+                >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Tên Network *</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Tên Network *
+                  </label>
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="Network Name"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Purpose</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Purpose
+                  </label>
                   <select
                     value={formData.purpose}
-                    onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    onChange={(e) =>
+                      setFormData({ ...formData, purpose: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="corporate">Corporate</option>
                     <option value="guest">Guest</option>
@@ -636,23 +729,31 @@ export default function UnifiNetworksPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Subnet (CIDR)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Subnet (CIDR)
+                  </label>
                   <input
                     type="text"
                     value={formData.ipSubnet}
-                    onChange={(e) => setFormData({ ...formData, ipSubnet: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    onChange={(e) =>
+                      setFormData({ ...formData, ipSubnet: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="192.168.1.0/24"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Gateway</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Gateway
+                  </label>
                   <input
                     type="text"
                     value={formData.ipSubnetGw}
-                    onChange={(e) => setFormData({ ...formData, ipSubnetGw: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    onChange={(e) =>
+                      setFormData({ ...formData, ipSubnetGw: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="192.168.1.1"
                   />
                 </div>
@@ -661,20 +762,29 @@ export default function UnifiNetworksPage() {
                   <input
                     type="checkbox"
                     checked={formData.vlanEnabled}
-                    onChange={(e) => setFormData({ ...formData, vlanEnabled: e.target.checked })}
-                    className="w-4 h-4 text-purple-600 rounded"
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        vlanEnabled: e.target.checked,
+                      })
+                    }
+                    className="w-4 h-4 text-blue-600 rounded"
                   />
                   <span className="text-sm text-slate-700">Enable VLAN</span>
                 </label>
 
                 {formData.vlanEnabled && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">VLAN ID</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      VLAN ID
+                    </label>
                     <input
                       type="number"
                       value={formData.vlanId}
-                      onChange={(e) => setFormData({ ...formData, vlanId: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      onChange={(e) =>
+                        setFormData({ ...formData, vlanId: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       placeholder="1-4094"
                     />
                   </div>
@@ -684,8 +794,13 @@ export default function UnifiNetworksPage() {
                   <input
                     type="checkbox"
                     checked={formData.dhcpdEnabled}
-                    onChange={(e) => setFormData({ ...formData, dhcpdEnabled: e.target.checked })}
-                    className="w-4 h-4 text-purple-600 rounded"
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        dhcpdEnabled: e.target.checked,
+                      })
+                    }
+                    className="w-4 h-4 text-blue-600 rounded"
                   />
                   <span className="text-sm text-slate-700">Enable DHCP</span>
                 </label>
@@ -693,22 +808,36 @@ export default function UnifiNetworksPage() {
                 {formData.dhcpdEnabled && (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">DHCP Start</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        DHCP Start
+                      </label>
                       <input
                         type="text"
                         value={formData.dhcpdStart}
-                        onChange={(e) => setFormData({ ...formData, dhcpdStart: e.target.value })}
-                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            dhcpdStart: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="192.168.1.100"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">DHCP End</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        DHCP End
+                      </label>
                       <input
                         type="text"
                         value={formData.dhcpdStop}
-                        onChange={(e) => setFormData({ ...formData, dhcpdStop: e.target.value })}
-                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            dhcpdStop: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="192.168.1.200"
                       />
                     </div>
@@ -726,7 +855,7 @@ export default function UnifiNetworksPage() {
                 <button
                   onClick={handleCreateNetwork}
                   disabled={!formData.name}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   Tạo
                 </button>
@@ -754,29 +883,42 @@ export default function UnifiNetworksPage() {
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200">
-                <h3 className="text-lg font-semibold text-slate-900">Chỉnh sửa Network</h3>
-                <button onClick={() => setEditModal({ open: false, network: null })} className="p-2 hover:bg-slate-100 rounded-lg">
+                <h3 className="text-lg font-semibold text-slate-900">
+                  Chỉnh sửa Network
+                </h3>
+                <button
+                  onClick={() => setEditModal({ open: false, network: null })}
+                  className="p-2 hover:bg-slate-100 rounded-lg"
+                >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
               <div className="p-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Tên Network *</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Tên Network *
+                  </label>
                   <input
                     type="text"
                     value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    onChange={(e) =>
+                      setFormData({ ...formData, name: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Purpose</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    Purpose
+                  </label>
                   <select
                     value={formData.purpose}
-                    onChange={(e) => setFormData({ ...formData, purpose: e.target.value })}
-                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                    onChange={(e) =>
+                      setFormData({ ...formData, purpose: e.target.value })
+                    }
+                    className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="corporate">Corporate</option>
                     <option value="guest">Guest</option>
@@ -787,21 +929,29 @@ export default function UnifiNetworksPage() {
 
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Subnet</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Subnet
+                    </label>
                     <input
                       type="text"
                       value={formData.ipSubnet}
-                      onChange={(e) => setFormData({ ...formData, ipSubnet: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      onChange={(e) =>
+                        setFormData({ ...formData, ipSubnet: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Gateway</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      Gateway
+                    </label>
                     <input
                       type="text"
                       value={formData.ipSubnetGw}
-                      onChange={(e) => setFormData({ ...formData, ipSubnetGw: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      onChange={(e) =>
+                        setFormData({ ...formData, ipSubnetGw: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 </div>
@@ -810,20 +960,29 @@ export default function UnifiNetworksPage() {
                   <input
                     type="checkbox"
                     checked={formData.vlanEnabled}
-                    onChange={(e) => setFormData({ ...formData, vlanEnabled: e.target.checked })}
-                    className="w-4 h-4 text-purple-600 rounded"
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        vlanEnabled: e.target.checked,
+                      })
+                    }
+                    className="w-4 h-4 text-blue-600 rounded"
                   />
                   <span className="text-sm text-slate-700">Enable VLAN</span>
                 </label>
 
                 {formData.vlanEnabled && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">VLAN ID</label>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
+                      VLAN ID
+                    </label>
                     <input
                       type="number"
                       value={formData.vlanId}
-                      onChange={(e) => setFormData({ ...formData, vlanId: e.target.value })}
-                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                      onChange={(e) =>
+                        setFormData({ ...formData, vlanId: e.target.value })
+                      }
+                      className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 )}
@@ -832,8 +991,13 @@ export default function UnifiNetworksPage() {
                   <input
                     type="checkbox"
                     checked={formData.dhcpdEnabled}
-                    onChange={(e) => setFormData({ ...formData, dhcpdEnabled: e.target.checked })}
-                    className="w-4 h-4 text-purple-600 rounded"
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        dhcpdEnabled: e.target.checked,
+                      })
+                    }
+                    className="w-4 h-4 text-blue-600 rounded"
                   />
                   <span className="text-sm text-slate-700">Enable DHCP</span>
                 </label>
@@ -841,21 +1005,35 @@ export default function UnifiNetworksPage() {
                 {formData.dhcpdEnabled && (
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">DHCP Start</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        DHCP Start
+                      </label>
                       <input
                         type="text"
                         value={formData.dhcpdStart}
-                        onChange={(e) => setFormData({ ...formData, dhcpdStart: e.target.value })}
-                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            dhcpdStart: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-slate-700 mb-1">DHCP End</label>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        DHCP End
+                      </label>
                       <input
                         type="text"
                         value={formData.dhcpdStop}
-                        onChange={(e) => setFormData({ ...formData, dhcpdStop: e.target.value })}
-                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            dhcpdStop: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
                   </div>
@@ -872,7 +1050,7 @@ export default function UnifiNetworksPage() {
                 <button
                   onClick={handleUpdateNetwork}
                   disabled={!formData.name}
-                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   Lưu
                 </button>

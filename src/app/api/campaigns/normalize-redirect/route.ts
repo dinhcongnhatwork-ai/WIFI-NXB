@@ -1,8 +1,9 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { authenticateRequest } from '@/lib/auth';
 import { normalizeRedirectUrl } from '@/lib/redirect-url';
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   const user = authenticateRequest(req);
   if (!user) {
     return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
@@ -44,3 +45,5 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const POST = withPermission('operate', handlePOST);

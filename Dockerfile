@@ -8,7 +8,7 @@ FROM node:20-bullseye-slim AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN APP_SERVER_MODE=build MONITOR_PROCESS_ENABLED=false npm run build
 
 FROM node:20-bullseye-slim AS runner
 WORKDIR /app

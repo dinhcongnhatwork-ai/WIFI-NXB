@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { isVideoWatched } from '@/lib/redis';
+import { cleanMac, hasPublishedGate, parseDevice, PortalContextError, requiresSignedPortalSession, resolvePortalAccess } from '@/lib/attendance/runtime';
 import { normalizeRedirectUrl, resolvePortalFallbackUrl } from '@/lib/redirect-url';
+
+export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/connect
@@ -47,6 +51,7 @@ export async function GET(req: NextRequest) {
     const linkLogin = pickFirst('link-login', 'link-login-only', 'linklogin', 'linkLogin');
     const campaignId = pickFirst('campaignId', 'campaign-id');
     const redirectUrlParam = pickFirst('redirectUrl');
+    const portalSessionId = pickFirst('portalSessionId', 'sessionId');
 
     if (!mac && !trial && !linkLogin) {
       // No way to authorize — redirect to portal with error
@@ -54,39 +59,21 @@ export async function GET(req: NextRequest) {
       return NextResponse.redirect(fallback, 302);
     }
 
-    // Find the campaign (for logging and redirect URL)
-    const now = new Date();
-    let campaign = campaignId
-      ? await prisma.campaign.findFirst({
-          where: {
-            id: campaignId,
-            active: true,
-            startTime: { lte: now },
-            endTime: { gte: now },
-          },
-        })
-      : null;
-
-    if (!campaign && ssid) {
-      campaign = await prisma.campaign.findFirst({
-        where: {
-          ssid,
-          active: true,
-          startTime: { lte: now },
-          endTime: { gte: now },
-        },
-      });
+    if (!portalSessionId && !ssid) return NextResponse.json({ success: false, error: 'Signed portal session required' }, { status: 403 });
+    const device = pickFirst('device') ? parseDevice(pickFirst('device')) : undefined;
+    const runtime = await resolvePortalAccess(prisma, { ssid, mac, device, apMac: pickFirst('apMac', 'ap-mac', 'ap'), campaignId }, portalSessionId);
+    if (!runtime) return NextResponse.json({ success: false, error: 'Invalid or expired portal session' }, { status: 400 });
+    if (!runtime.effectiveTemplateId) return NextResponse.json({ success: false, error: 'No published portal is configured for this network' }, { status: 403 });
+    if (runtime.attendanceAmbiguous) return NextResponse.json({ success: false, error: 'Attendance network context is ambiguous' }, { status: 403 });
+    if (!portalSessionId && requiresSignedPortalSession(runtime)) return NextResponse.json({ success: false, error: 'Signed portal session required' }, { status: 403 });
+    const campaign = runtime.campaign;
+    if (hasPublishedGate(runtime.layout, 'video_gate', runtime.device)) {
+      if (!portalSessionId || !(await isVideoWatched(`${runtime.portalSessionId}:${cleanMac(mac) || 'unknown-client'}`))) {
+        return NextResponse.json({ success: false, error: 'Video not watched' }, { status: 403 });
+      }
     }
-
-    if (!campaign) {
-      campaign = await prisma.campaign.findFirst({
-        where: {
-          active: true,
-          startTime: { lte: now },
-          endTime: { gte: now },
-        },
-        orderBy: { updatedAt: 'desc' },
-      });
+    if (runtime.attendanceSession && hasPublishedGate(runtime.layout, 'attendance_gate', runtime.device) && !runtime.isAlreadyRegistered) {
+      return NextResponse.json({ success: false, error: 'Attendance registration required' }, { status: 403 });
     }
 
     // Upsert wifi user
@@ -175,6 +162,7 @@ export async function GET(req: NextRequest) {
     console.warn(`[connect] ⚠️ No valid trial/link-login URL for MAC=${mac} IP=${ip}, redirecting directly to ${finalRedirect}`);
     return NextResponse.redirect(finalRedirect, 302);
   } catch (error) {
+    if (error instanceof PortalContextError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     console.error('Connect redirect error:', error);
     const fallback = resolvePortalFallbackUrl(process.env.NEXT_PUBLIC_APP_URL);
     return NextResponse.redirect(fallback, 302);

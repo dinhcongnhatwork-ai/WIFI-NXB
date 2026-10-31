@@ -1,3 +1,5 @@
+import { recordId } from '@/lib/network/paths';
+import { deviceFetch } from '@/lib/network/transport';
 // ============================================
 // UniFi Controller API Client
 // Supports: UniFi OS / UniFi Network API v6+
@@ -45,8 +47,8 @@ import {
 } from '@/types/unifi';
 
 const DEFAULT_CONTROLLER_URL = process.env.UNIFI_CONTROLLER_URL || 'https://192.168.1.200:11443';
-const DEFAULT_USERNAME = process.env.UNIFI_USERNAME || 'congnhat';
-const DEFAULT_PASSWORD = process.env.UNIFI_PASSWORD || 'Congnhat2002@';
+const DEFAULT_USERNAME = process.env.UNIFI_USERNAME || '';
+const DEFAULT_PASSWORD = process.env.UNIFI_PASSWORD || '';
 const DEFAULT_SITE = process.env.UNIFI_SITE || 'default';
 
 let dynamicUnifiResolver: (() => Partial<UnifiClientConfig>) | null = null;
@@ -61,6 +63,10 @@ export interface UnifiClientConfig {
   password: string;
   site: string;
   rejectUnauthorized: boolean;
+  apiKey?: string;
+  version?: string | null;
+  apiMode?: 'legacy' | 'official';
+  apiPrefix?: string;
 }
 
 interface CachedSession {
@@ -83,6 +89,12 @@ export class UnifiClient {
   private csrfToken: string | null = null;
   private cookie: string | null = null;
   private siteResolved = false;
+  private apiKey?: string;
+  private apiMode: 'legacy' | 'official';
+  private apiPrefix: string;
+  private legacyPrefix: string;
+  public version: string | null;
+
 
   constructor(config: Partial<UnifiClientConfig> = {}) {
     const dynamic = dynamicUnifiResolver ? dynamicUnifiResolver() : {};
@@ -93,20 +105,28 @@ export class UnifiClient {
     this.baseUrl = rawUrl.replace(/\/+$/, '');
     this.username = config.username || dynamic.username || DEFAULT_USERNAME;
     this.password = config.password || dynamic.password || DEFAULT_PASSWORD;
-    this.site = config.site || dynamic.site || DEFAULT_SITE;
-    this.rejectUnauthorized = config.rejectUnauthorized ?? dynamic.rejectUnauthorized ?? false;
+    this.site = recordId(config.site || dynamic.site || DEFAULT_SITE);
+    this.rejectUnauthorized = config.rejectUnauthorized ?? dynamic.rejectUnauthorized ?? true;
+    this.apiMode = config.apiMode === 'legacy' ? 'legacy' : config.apiMode === 'official' || config.apiKey ? 'official' : 'legacy';
+    this.apiKey = this.apiMode === 'official' ? config.apiKey : undefined;
+    this.apiPrefix = config.apiPrefix === '' || config.apiPrefix === '/integration/v1' ? '/integration/v1' : '/proxy/network/integration/v1';
+    this.version = config.version || null;
+    this.legacyPrefix = config.apiPrefix === '/proxy/network' ? '/proxy/network' : '';
   }
 
   private getEndpointCandidates(endpoint: string): string[] {
     const normalized = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
 
     if (normalized.startsWith('/proxy/network')) {
-      return [normalized];
+      const unproxied = normalized.replace('/proxy/network', '');
+      return [normalized, unproxied];
     }
 
-    const candidates = [normalized];
+    const candidates = this.legacyPrefix && (normalized.startsWith('/api/s/') || normalized.startsWith('/v2/api/'))
+      ? [`${this.legacyPrefix}${normalized}`]
+      : [normalized];
 
-    if (normalized.startsWith('/api/')) {
+    if (normalized.startsWith('/api/') || normalized.startsWith('/v2/api/')) {
       candidates.push(`/proxy/network${normalized}`);
     }
 
@@ -177,7 +197,7 @@ export class UnifiClient {
     const status =
       (typeof device?.status === 'string' ? device.status : undefined) ||
       (state !== undefined ? statusFromState[state] : undefined) ||
-      (device?.disconnected_at ? 'offline' : 'online');
+      (device?.disconnected_at ? 'offline' : 'unknown');
 
     const normalizedType =
       device?.type ||
@@ -193,7 +213,10 @@ export class UnifiClient {
 
     return {
       ...device,
-      _id: device?._id || device?.id || device?.mac || `device-${Math.random().toString(36).slice(2, 10)}`,
+      radioTable: device.radioTable || device.radio_table,
+      portTable: device.portTable || device.port_table,
+      portOverrides: device.port_overrides,
+      _id: device?._id || device?.id || device?.mac || '',
       deviceId: device?.deviceId || device?._id || device?.id || device?.mac || '',
       mac: device?.mac || device?.macAddress || '',
       name: device?.name || device?.hostname || device?.model || device?.mac || 'Unknown Device',
@@ -203,7 +226,7 @@ export class UnifiClient {
       isConnected: status === 'online',
       ipAddress: device?.ipAddress || device?.ip || device?.config_network?.ip,
       serialNumber: device?.serialNumber || device?.serial,
-      uptime: this.toNumber(device?.uptime, 0),
+      uptime: this.toOptionalNumber(device?.uptime),
       guestNumSta: this.toOptionalNumber(device?.guestNumSta ?? device?.guest_num_sta),
       userNumSta: this.toOptionalNumber(device?.userNumSta ?? device?.num_sta),
       txBytes: this.toOptionalNumber(device?.txBytes ?? device?.tx_bytes),
@@ -222,20 +245,20 @@ export class UnifiClient {
 
     return {
       ...user,
-      _id: user?._id || mac || `client-${Math.random().toString(36).slice(2, 10)}`,
+      _id: user?._id || user?.id || mac || '',
       mac,
       ip: user?.ip || user?.ipAddress,
-      hostname: user?.hostname || user?.name || user?.hostname_alias || user?.display_name || user?.oui || mac,
-      isGuest: this.toBoolean(user?.isGuest ?? user?.is_guest ?? user?.guest, false),
+      hostname: user?.hostname || undefined,
+      isGuest: (user?.isGuest ?? user?.is_guest ?? user?.guest) == null ? undefined : this.toBoolean(user?.isGuest ?? user?.is_guest ?? user?.guest, false),
       isWireless,
       isWired,
       isBlocked: this.toBoolean(user?.isBlocked ?? user?.blocked, false),
-      authorized: this.toBoolean(user?.authorized, true),
+      authorized: user?.authorized == null ? undefined : this.toBoolean(user.authorized, false),
       apMac: user?.apMac || user?.ap_mac,
       apName: user?.apName || user?.ap_name,
       ssid: user?.ssid || user?.essid,
       channel: this.toOptionalNumber(user?.channel),
-      uptime: this.toOptionalNumber(user?.uptime ?? user?.latest_assoc_time ?? user?.assoc_time),
+      uptime: this.toOptionalNumber(user?.uptime),
       rxBytes: this.toOptionalNumber(user?.rxBytes ?? user?.rx_bytes),
       txBytes: this.toOptionalNumber(user?.txBytes ?? user?.tx_bytes),
       rxPackets: this.toOptionalNumber(user?.rxPackets ?? user?.rx_packets),
@@ -387,165 +410,100 @@ export class UnifiClient {
   }
 
   private async resolveSite(): Promise<void> {
-    if (this.siteResolved) {
-      return;
-    }
-
+    if (this.siteResolved) return;
+    // Explicit site names/IDs never fall back to another site.
+    if (!/^[A-Za-z0-9_-]+$/.test(this.site)) throw new Error('Site UniFi không hợp lệ');
     this.siteResolved = true;
+  }
 
-    if (this.site && this.site !== 'default') {
-      return;
+  isOfficialApi(): boolean { return this.apiMode === 'official'; }
+
+  private async officialList(path: string): Promise<any[]> {
+    const rows: any[] = [];
+    for (;;) {
+      const page: any = await this.officialGet(`${path}?offset=${rows.length}&limit=200`);
+      if (!Array.isArray(page.data)) throw new Error('Phản hồi danh sách API chính thức không hợp lệ');
+      rows.push(...page.data);
+      if (typeof page.totalCount === 'number' ? rows.length >= page.totalCount : page.data.length < (page.limit || 200)) return rows;
+      if (!page.data.length || rows.length >= 100000) throw new Error('Danh sách API không tiến triển hoặc vượt giới hạn an toàn');
     }
+  }
 
-    const endpoints = [
-      '/api/self/sites',
-      '/proxy/network/api/self/sites',
-    ];
+  async officialGet(path: string): Promise<unknown> {
+    if (!this.apiKey) throw new Error('API chính thức yêu cầu khóa API đã cấu hình');
+    return this.request(`${this.apiPrefix}${path}`, { method: 'GET' });
+  }
 
-    for (const endpoint of endpoints) {
-      try {
-        const response = await this.get<UnifiListResponse<UnifiSite>>(endpoint);
-        const firstSite = response.data?.[0];
+  async rawRequest(path: string, method = 'GET', body?: unknown): Promise<any> {
+    const { validateRelativePath } = await import('@/lib/network/paths');
+    validateRelativePath(path);
+    return this.request(path, { method, body: body === undefined ? undefined : JSON.stringify(body) });
+  }
 
-        if (firstSite?.name) {
-          this.site = firstSite.name;
-          return;
-        }
-      } catch {
-        // Try next endpoint.
-      }
-    }
+  async siteRequest(path: string, method = 'GET', body?: unknown): Promise<any> {
+    if (this.isOfficialApi()) throw new Error('Quản lý cấu hình cũ cần phiên đăng nhập; chế độ khóa API chỉ hỗ trợ endpoint chính thức đã phát hiện');
+    return this.rawRequest(`/api/s/${this.site}/${path}`, method, body);
   }
 
   // ============================================
   // Core HTTP Methods
   // ============================================
 
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const endpointCandidates = this.getEndpointCandidates(endpoint);
-    let lastError: Error | null = null;
-    const previousTlsReject = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-
-    if (!this.rejectUnauthorized && this.baseUrl.startsWith('https://')) {
-      process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-    }
-
-    try {
-      for (let index = 0; index < endpointCandidates.length; index += 1) {
-        const candidate = endpointCandidates[index];
-        const url = `${this.baseUrl}${candidate}`;
-
-        const headers: Record<string, string> = {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json',
-          ...(options.headers as Record<string, string> || {}),
-        };
-
-        if (this.csrfToken) {
-          headers['X-CSRF-Token'] = this.csrfToken;
-        }
-
-        if (this.cookie) {
-          headers['Cookie'] = this.cookie;
-        }
-
-        try {
-          const response = await fetch(url, {
-            ...options,
-            headers,
-          });
-
-          const setCookie = response.headers.get('set-cookie');
-          if (setCookie) {
-            const tokenMatch = setCookie.match(/TOKEN=([^;]+)/);
-            if (tokenMatch) {
-              this.cookie = `TOKEN=${tokenMatch[1]}`;
-              try {
-                const parts = tokenMatch[1].split('.');
-                if (parts.length === 3) {
-                  const jwtPayload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
-                  if (jwtPayload.csrfToken) {
-                    this.csrfToken = jwtPayload.csrfToken;
-                  }
-                }
-              } catch {}
-            } else {
-              this.cookie = setCookie.split(';')[0];
-            }
-          }
-
-          const csrfToken = response.headers.get('x-csrf-token');
-          if (csrfToken) {
-            this.csrfToken = csrfToken;
-          }
-
-          const bodyText = await response.text();
-          let parsedData: any = {};
-
-          if (bodyText.trim().length > 0) {
-            try {
-              parsedData = JSON.parse(bodyText);
-            } catch {
-              parsedData = { raw: bodyText };
-            }
-          }
-
-          if (!response.ok) {
-            if (response.status === 401) {
-              UnifiClient.sessionCache.delete(`${this.baseUrl}:${this.username}`);
-            }
-
-            const rawErr = parsedData?.error;
-            const errMsg =
-              (typeof rawErr === 'string' ? rawErr : '') ||
-              rawErr?.message ||
-              parsedData?.error_description ||
-              parsedData?.meta?.msg ||
-              parsedData?.msg ||
-              parsedData?.message ||
-              (rawErr ? JSON.stringify(rawErr) : '') ||
-              `Request failed: ${response.status}`;
-            const err = new Error(errMsg);
-            lastError = err;
-
-            const hasFallback = index < endpointCandidates.length - 1;
-            const shouldTryFallback = hasFallback && [401, 403, 404, 405].includes(response.status);
-
-            if (shouldTryFallback) {
-              continue;
-            }
-
-            throw err;
-          }
-
-          if (response.status === 204 || bodyText.trim().length === 0) {
-            return {} as T;
-          }
-
-          return parsedData as T;
-        } catch (error) {
-          lastError = error instanceof Error ? error : new Error(`Network error: ${error}`);
-
-          const hasFallback = index < endpointCandidates.length - 1;
-          if (hasFallback) {
-            continue;
-          }
-        }
-      }
-    } finally {
-      if (!this.rejectUnauthorized && this.baseUrl.startsWith('https://')) {
-        if (previousTlsReject === undefined) {
-          delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
+  private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const { validateRelativePath } = await import('@/lib/network/paths');
+    validateRelativePath(endpoint);
+    if (this.isOfficialApi() && !endpoint.startsWith(this.apiPrefix)) throw new Error('Endpoint này cần kết nối phiên đăng nhập cũ; không được hỗ trợ trong chế độ API chính thức');
+    const read = !options.method || options.method === 'GET';
+    const candidates = read ? this.getEndpointCandidates(endpoint) : [this.legacyPrefix && endpoint.startsWith('/api/s/') ? `${this.legacyPrefix}${endpoint}` : endpoint];
+    let lastError: Error | undefined;
+    for (const candidate of candidates) {
+      const response = await deviceFetch(`${this.baseUrl}${candidate}`, {
+        ...options, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15000),
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json',
+          ...(this.apiKey ? { 'X-API-Key': this.apiKey } : {}),
+          ...(this.cookie ? { Cookie: this.cookie } : {}),
+          ...(this.csrfToken ? { 'X-CSRF-Token': this.csrfToken } : {}), ...(options.headers || {}) },
+      }, !this.rejectUnauthorized);
+      const text = await response.text();
+      let payload: any = {};
+      let isJson = false;
+      try {
+        if (text) {
+          payload = JSON.parse(text);
+          isJson = true;
         } else {
-          process.env.NODE_TLS_REJECT_UNAUTHORIZED = previousTlsReject;
+          payload = {};
+          isJson = true;
         }
+      } catch {
+        isJson = false;
       }
+      if (!response.ok || !isJson || payload?.meta?.rc === 'error') {
+        const errorMsg = payload?.meta?.msg || payload?.message || (!isJson && response.ok ? 'Controller trả về JSON không hợp lệ' : `UniFi API error: ${response.status}`);
+        const isLoginEndpoint = candidate.includes('/login');
+        if (!isLoginEndpoint && (response.status === 401 || errorMsg === 'api.err.LoginRequired') && !(options as any)?._retried) {
+          const cacheKey = `${this.baseUrl}:${this.username}`;
+          UnifiClient.sessionCache.delete(cacheKey);
+          this.cookie = null;
+          this.csrfToken = null;
+          try {
+            await this.login();
+            return await this.request<T>(endpoint, { ...(options || {}), _retried: true } as RequestInit);
+          } catch {
+            // If re-login fails, throw original error
+          }
+        }
+        lastError = Object.assign(new Error(errorMsg), { status: response.status });
+        if (read && response.status === 404) continue;
+        throw lastError;
+      }
+      if (candidate.startsWith('/proxy/network/api/s/') || candidate.startsWith('/proxy/network/v2/api/')) this.legacyPrefix = '/proxy/network';
+      const cookie = response.headers.get('set-cookie');
+      if (cookie) this.cookie = cookie.split(';')[0];
+      this.csrfToken = response.headers.get('x-csrf-token') || this.csrfToken;
+      return payload as T;
     }
-
-    throw lastError || new Error('Request failed');
+    throw lastError || new Error('UniFi request failed');
   }
 
   private async get<T>(endpoint: string): Promise<T> {
@@ -582,6 +540,13 @@ export class UnifiClient {
   // ============================================
 
   async login(credentials?: UnifiLoginRequest): Promise<UnifiLoginResponse> {
+    if (this.apiKey) {
+      const info = await this.officialGet('/info') as {applicationVersion?:string};
+      if (!info.applicationVersion) throw new Error('API chính thức không trả về phiên bản ứng dụng');
+      this.version = info.applicationVersion;
+      await this.resolveSite();
+      return { username: this.username } as UnifiLoginResponse;
+    }
     const loginData = credentials || { username: this.username, password: this.password };
     const cacheKey = `${this.baseUrl}:${loginData.username}`;
 
@@ -594,11 +559,11 @@ export class UnifiClient {
       return { username: loginData.username } as UnifiLoginResponse;
     }
 
-    // 2. Prioritize /api/auth/login for UniFi OS (UDM / CloudKey / UniFi OS 3+)
+    // 2. Try classic controller /api/login first, then UniFi OS /api/auth/login
     const endpoints = [
-      '/api/auth/login',
       '/api/login',
-      '/api/s/default/login',
+      '/api/auth/login',
+      `/api/s/${this.site}/login`,
     ];
 
     let lastError: Error | null = null;
@@ -686,15 +651,20 @@ export class UnifiClient {
   // ============================================
 
   async getControllerInfo(): Promise<UnifiControllerInfo> {
+    if (this.isOfficialApi()) { if(!this.version)await this.login(); return {name:'UniFi Network',version:this.version||'Unknown',baseUrl:this.baseUrl}; }
     const endpoints = [
-      '/api/s/default',
+      `/api/s/${this.site}/stat/sysinfo`,
+      '/status',
       '/api/v1/info',
       '/api/systat',
     ];
 
-    for (const endpoint of endpoints) {
+    let lastMissing: unknown;
+    for (const endpoint of Array.from(new Set(endpoints))) {
       try {
         const response = await this.get<{ data: Array<UnifiControllerInfo> } | UnifiControllerInfo>(endpoint);
+        const serverVersion=(response as {meta?:{server_version?:string}}).meta?.server_version;
+        if(serverVersion)return {name:'UniFi Network',version:serverVersion,baseUrl:this.baseUrl};
         if (Array.isArray(response)) {
           return response[0];
         }
@@ -702,70 +672,33 @@ export class UnifiClient {
           return response.data[0];
         }
         return response as UnifiControllerInfo;
-      } catch {
-        // Try next endpoint
+      } catch (error) {
+        if ((error as {status?:number}).status !== 404) throw error;
+        lastMissing = error;
       }
     }
 
-    return {
-      name: 'UniFi Controller',
-      version: 'Unknown',
-      baseUrl: this.baseUrl,
-    };
+    throw lastMissing || new Error('Không tìm thấy endpoint thông tin controller');
   }
 
   async getSites(): Promise<UnifiSite[]> {
-    const endpoints = [
-      '/api/self/sites',
-      '/proxy/network/api/self/sites',
-      '/api/s/default/stat/sites',
-      '/api/sites',
-      '/api/v1/sites',
-    ];
-
-    for (const endpoint of endpoints) {
-      try {
-        const response = await this.get<UnifiListResponse<UnifiSite>>(endpoint);
-        if (response.data) {
-          return response.data;
-        }
-      } catch {
-        // Try next endpoint
-      }
-    }
-
-    return [];
+    if (this.isOfficialApi()) return (await this.officialList('/sites')).map((s:any) => ({ ...s, _id:s.id, name:s.id, desc:s.name }));
+    const response = await this.get<UnifiListResponse<UnifiSite>>('/api/self/sites');
+    if (!Array.isArray(response.data)) throw new Error('Phản hồi danh sách site không hợp lệ');
+    return response.data;
   }
 
-  // ============================================
-  // Devices
-  // ============================================
-
   async getDevices(): Promise<UnifiDevice[]> {
-    const endpoints = [
-      `/api/s/${this.site}/stat/device`,
-      '/api/v2/api/stat/device',
-      '/api/s/default/stat/device',
-    ];
-
-    for (const endpoint of endpoints) {
-      try {
-        const response = await this.get<UnifiListResponse<UnifiDevice>>(endpoint);
-        if (response.data) {
-          return response.data.map((device) => this.normalizeDevice(device));
-        }
-      } catch {
-        // Try next endpoint
-      }
-    }
-
-    return [];
+    const rows = this.isOfficialApi() ? await this.officialList(`/sites/${this.site}/devices`) : (await this.get<UnifiListResponse<UnifiDevice>>(`/api/s/${this.site}/stat/device`)).data;
+    if (!Array.isArray(rows)) throw new Error('Phản hồi danh sách thiết bị không hợp lệ');
+    return rows.map((d:any) => this.normalizeDevice({ ...d, status: d.state?.toLowerCase?.() || d.status }));
   }
 
   async getDevice(deviceId: string): Promise<UnifiDevice | null> {
+    if (this.isOfficialApi()) return this.normalizeDevice(await this.officialGet(`/sites/${this.site}/devices/${recordId(deviceId)}`));
     const endpoints = [
-      `/api/s/${this.site}/stat/device/${deviceId}`,
-      `/api/s/default/stat/device/${deviceId}`,
+      `/api/s/${this.site}/stat/device/${recordId(deviceId)}`,
+      `/api/s/${this.site}/stat/device/${recordId(deviceId)}`,
     ];
 
     for (const endpoint of endpoints) {
@@ -775,9 +708,7 @@ export class UnifiClient {
           return response.data[0] ? this.normalizeDevice(response.data[0]) : null;
         }
         return this.normalizeDevice(response);
-      } catch {
-        // Try next endpoint
-      }
+      } catch (error) { throw error; }
     }
 
     return null;
@@ -813,47 +744,24 @@ export class UnifiClient {
     );
   }
 
-  async adoptDevice(deviceId: string): Promise<boolean> {
-    try {
-      const endpoints = [
-        `/api/s/${this.site}/api/devices/${deviceId}/adopt`,
-        `/api/s/default/devices/adopt`,
-      ];
-
-      for (const endpoint of endpoints) {
-        try {
-          await this.post(endpoint, { deviceId });
-          return true;
-        } catch {
-          // Try next endpoint
-        }
-      }
-
-      return false;
-    } catch {
-      return false;
-    }
+  private async deviceCommand(deviceId: string, cmd: string): Promise<boolean> {
+    const device = await this.getDevice(deviceId);
+    if (!device?.mac) throw new Error('Thiết bị không có địa chỉ MAC quan sát được');
+    const response = await this.post<{meta?:{rc:string}}>(`/api/s/${this.site}/cmd/devmgr`, cmd==='forget'?{cmd,macs:[device.mac]}:{cmd,mac:device.mac});
+    return response?.meta?.rc==='ok';
   }
+
+  async adoptDevice(deviceId: string): Promise<boolean> { return this.deviceCommand(deviceId, 'adopt'); }
 
   async renameDevice(deviceId: string, name: string): Promise<boolean> {
     try {
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/device/${deviceId}`,
+        `/api/s/${this.site}/rest/device/${recordId(deviceId)}`,
         { name }
       );
 
       return response?.meta?.rc === 'ok';
-    } catch {
-      try {
-        const response = await this.put<{ meta?: { rc: string } }>(
-          `/api/s/default/rest/device/${deviceId}`,
-          { name }
-        );
-        return response?.meta?.rc === 'ok';
-      } catch {
-        return false;
-      }
-    }
+    } catch (error) { throw error; }
   }
 
   async setDeviceLedSettings(deviceId: string, settings: UnifiLedSettingsRequest): Promise<boolean> {
@@ -863,123 +771,37 @@ export class UnifiClient {
       if (settings.reverse !== undefined) payload.led_reverse = settings.reverse;
 
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/device/${deviceId}`,
+        `/api/s/${this.site}/rest/device/${recordId(deviceId)}`,
         payload
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
-  async rebootDevice(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.post<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/cmd/devmgr/force-provision`,
-        { deviceId }
-      );
-      return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
-  }
-
-  async upgradeDeviceFirmware(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.post<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/cmd/devmgr/upgrade-device`,
-        { deviceId }
-      );
-      return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
-  }
-
-  async forgetDevice(deviceId: string): Promise<boolean> {
-    try {
-      const response = await this.delete<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/device/${deviceId}`
-      );
-      return response?.meta?.rc === 'ok';
-    } catch {
-      try {
-        const response = await this.delete<{ meta?: { rc: string } }>(
-          `/api/s/default/rest/device/${deviceId}`
-        );
-        return response?.meta?.rc === 'ok';
-      } catch {
-        return false;
-      }
-    }
-  }
+  async rebootDevice(deviceId: string): Promise<boolean> { return this.deviceCommand(deviceId, 'restart'); }
+  async restartDevice(deviceId: string): Promise<boolean> { return this.deviceCommand(deviceId, 'restart'); }
+  async setLocate(deviceId: string, locate = true): Promise<boolean> { return this.deviceCommand(deviceId, locate ? 'set-locate' : 'unset-locate'); }
+  async forceProvision(deviceId: string): Promise<boolean> { return this.deviceCommand(deviceId, 'force-provision'); }
+  async upgradeDeviceFirmware(deviceId: string): Promise<boolean> { return this.deviceCommand(deviceId, 'upgrade'); }
+  async forgetDevice(deviceId: string): Promise<boolean> { return this.deviceCommand(deviceId, 'forget'); }
 
   async getDeviceUplink(mac: string): Promise<UnifiUplink | null> {
     try {
       const response = await this.get<{ uplink?: UnifiUplink }>(
-        `/api/s/${this.site}/stat/uplink/${mac}`
+        `/api/s/${this.site}/stat/uplink/${recordId(mac)}`
       );
       return response?.uplink || null;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   // ============================================
   // Clients / Users
   // ============================================
 
-  async getClients(force?: boolean): Promise<UnifiUser[]> {
-    const userMap = new Map<string, UnifiUser>();
-
-    // 1. Query active wireless stations (/stat/sta)
-    const staEndpoints = [
-      `/api/s/${this.site}/stat/sta`,
-      `/api/s/default/stat/sta`,
-    ];
-
-    for (const endpoint of staEndpoints) {
-      try {
-        const url = force ? `${endpoint}?force=true` : endpoint;
-        const response = await this.get<UnifiListResponse<UnifiUser>>(url);
-        if (response.data && Array.isArray(response.data)) {
-          for (const raw of response.data) {
-            const client = this.normalizeClient(raw);
-            if (client.mac) {
-              userMap.set(client.mac.toLowerCase(), client);
-            }
-          }
-          break;
-        }
-      } catch {
-        // Try next endpoint
-      }
-    }
-
-    // 2. Query guest stations (/stat/guest) to ensure captive portal / guest users are included
-    const guestEndpoints = [
-      `/api/s/${this.site}/stat/guest`,
-      `/api/s/default/stat/guest`,
-    ];
-
-    for (const endpoint of guestEndpoints) {
-      try {
-        const response = await this.get<UnifiListResponse<UnifiUser>>(endpoint);
-        if (response.data && Array.isArray(response.data)) {
-          for (const raw of response.data) {
-            const client = this.normalizeClient(raw);
-            if (client.mac && !userMap.has(client.mac.toLowerCase())) {
-              userMap.set(client.mac.toLowerCase(), client);
-            }
-          }
-          break;
-        }
-      } catch {
-        // Try next endpoint
-      }
-    }
-
-    return Array.from(userMap.values());
+  async getClients(_force?: boolean): Promise<UnifiUser[]> {
+    const rows = this.isOfficialApi() ? await this.officialList(`/sites/${this.site}/clients`) : (await this.get<UnifiListResponse<UnifiUser>>(`/api/s/${this.site}/stat/sta`)).data;
+    if (!Array.isArray(rows)) throw new Error('Phản hồi danh sách máy khách không hợp lệ');
+    return rows.map((c:any) => this.normalizeClient(c));
   }
 
   async getGuests(): Promise<UnifiUser[]> {
@@ -988,99 +810,69 @@ export class UnifiClient {
         `/api/s/${this.site}/stat/guest`
       );
       return (response.data || []).map((user) => this.normalizeClient(user));
-    } catch {
-      try {
-        const response = await this.get<UnifiListResponse<UnifiUser>>(
-          '/api/s/default/stat/guest'
-        );
-        return (response.data || []).map((user) => this.normalizeClient(user));
-      } catch {
-        return [];
-      }
-    }
+    } catch (error) { throw error; }
   }
 
   async getClient(mac: string): Promise<UnifiUser | null> {
+    if (this.isOfficialApi()) return (await this.getClients()).find(client=>client.mac.toLowerCase()===mac.toLowerCase()||client._id===mac)||null;
     try {
       const response = await this.get<{ data: UnifiUser[] }>(
-        `/api/s/${this.site}/stat/sta/${mac}`
+        `/api/s/${this.site}/stat/sta/${recordId(mac)}`
       );
       return response.data?.[0] ? this.normalizeClient(response.data[0]) : null;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
-  async blockClient(mac: string): Promise<boolean> {
-    try {
-      const response = await this.post<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/cmd/stamgr/block-client`,
-        { mac }
-      );
-      return response?.meta?.rc === 'ok';
-    } catch {
-      try {
-        const response = await this.post<{ meta?: { rc: string } }>(
-          `/api/s/default/cmd/stamgr/block-client`,
-          { mac }
-        );
-        return response?.meta?.rc === 'ok';
-      } catch {
-        return false;
-      }
-    }
+  private async clientCommand(mac: string, cmd: string): Promise<boolean> {
+    if (!/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(mac)) throw new Error('Địa chỉ MAC không hợp lệ');
+    const response = await this.post<{meta?:{rc:string}}>(`/api/s/${this.site}/cmd/stamgr`, {cmd,mac});
+    return response?.meta?.rc==='ok';
   }
-
-  async unblockClient(mac: string): Promise<boolean> {
-    try {
-      const response = await this.post<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/cmd/stamgr/unblock-client`,
-        { mac }
-      );
-      return response?.meta?.rc === 'ok';
-    } catch {
-      try {
-        const response = await this.post<{ meta?: { rc: string } }>(
-          `/api/s/default/cmd/stamgr/unblock-client`,
-          { mac }
-        );
-        return response?.meta?.rc === 'ok';
-      } catch {
-        return false;
-      }
-    }
+  async blockClient(mac: string): Promise<boolean> { return this.clientCommand(mac,'block-sta'); }
+  async unblockClient(mac: string): Promise<boolean> { return this.clientCommand(mac,'unblock-sta'); }
+  async reconnectClient(mac: string): Promise<boolean> { return this.clientCommand(mac,'kick-sta'); }
+  async kickClient(mac: string): Promise<boolean> { return this.clientCommand(mac,'kick-sta'); }
+  async authorizeGuest(mac: string, minutes = 1440): Promise<boolean> {
+    if (!/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(mac)) throw new Error('Địa chỉ MAC không hợp lệ');
+    const response = await this.post<{ meta?: { rc: string } }>(`/api/s/${this.site}/cmd/stamgr`, {
+      cmd: 'authorize-guest',
+      mac,
+      minutes,
+    });
+    return response?.meta?.rc === 'ok';
   }
-
-  async reconnectClient(mac: string): Promise<boolean> {
-    try {
-      const response = await this.post<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/cmd/stamgr/reconnect-client`,
-        { mac }
-      );
-      return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+  async unauthorizeGuest(mac: string): Promise<boolean> {
+    if (!/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(mac)) throw new Error('Địa chỉ MAC không hợp lệ');
+    const response = await this.post<{ meta?: { rc: string } }>(`/api/s/${this.site}/cmd/stamgr`, {
+      cmd: 'unauthorize-guest',
+      mac,
+    });
+    return response?.meta?.rc === 'ok';
   }
+  async setClientNoteAndName(mac: string, name?: string, note?: string): Promise<boolean> {
+    if (!/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(mac)) throw new Error('Địa chỉ MAC không hợp lệ');
+    let userId: string | null = null;
+    const client = await this.getClient(mac).catch(() => null);
+    userId = (client as any)?._id || (client as any)?.user_id || null;
 
-  async kickClient(mac: string): Promise<boolean> {
-    try {
-      const response = await this.post<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/cmd/stamgr/kick-sta`,
-        { mac }
-      );
-      return response?.meta?.rc === 'ok';
-    } catch {
-      try {
-        const response = await this.post<{ meta?: { rc: string } }>(
-          `/api/s/default/cmd/stamgr/kick-sta`,
-          { mac }
-        );
-        return response?.meta?.rc === 'ok';
-      } catch {
-        return false;
-      }
+    const payload: Record<string, any> = {};
+    if (name !== undefined) payload.name = name.trim();
+    if (note !== undefined) {
+      payload.note = note.trim();
+      payload.noted = Boolean(note.trim());
     }
+
+    if (userId) {
+      const res = await this.post<{ meta?: { rc: string } }>(`/api/s/${this.site}/upd/user/${userId}`, payload);
+      if (res?.meta?.rc === 'ok') return true;
+    }
+
+    // Fallback: try rest/user with mac
+    const res = await this.post<{ meta?: { rc: string } }>(`/api/s/${this.site}/rest/user`, {
+      mac,
+      ...payload,
+    });
+    return res?.meta?.rc === 'ok';
   }
 
   async getRogueAps(): Promise<UnifiRogueAp[]> {
@@ -1089,16 +881,7 @@ export class UnifiClient {
         `/api/s/${this.site}/stat/rogueap`
       );
       return response.data || [];
-    } catch {
-      try {
-        const response = await this.get<UnifiListResponse<UnifiRogueAp>>(
-          '/api/s/default/stat/rogueap'
-        );
-        return response.data || [];
-      } catch {
-        return [];
-      }
-    }
+    } catch (error) { throw error; }
   }
 
   // ============================================
@@ -1109,15 +892,19 @@ export class UnifiClient {
     const endpoints = [
       `/api/s/${this.site}/rest/wlanconf`,
       `/api/s/${this.site}/list/wlanconf`,
-      '/api/s/default/rest/wlanconf',
-      '/api/s/default/list/wlanconf',
+      `/api/s/${this.site}/rest/wlanconf`,
+      `/api/s/${this.site}/list/wlanconf`,
     ];
 
     const merged = new Map<string, UnifiWlanConf>();
 
-    for (const endpoint of endpoints) {
+    let lastMissing: unknown;
+    let succeeded = false;
+    for (const endpoint of Array.from(new Set(endpoints))) {
       try {
         const response = await this.get<UnifiListResponse<UnifiWlanConf>>(endpoint);
+        if (!Array.isArray(response.data)) throw new Error('Phản hồi danh sách UniFi không hợp lệ');
+        succeeded = true;
         if (response.data) {
           for (const item of response.data) {
             const normalized = this.normalizeSsid(item);
@@ -1140,19 +927,21 @@ export class UnifiClient {
             });
           }
         }
-      } catch {
-        // Try next endpoint
+      } catch (error) {
+        if ((error as {status?:number}).status !== 404) throw error;
+        lastMissing = error;
       }
     }
 
+    if (!succeeded) throw lastMissing || new Error('Không tìm thấy endpoint danh sách UniFi');
     return Array.from(merged.values());
   }
 
   async getSsidById(wlanConfId: string): Promise<UnifiWlanConf | null> {
     const endpoints = [
-      `/api/s/${this.site}/rest/wlanconf/${wlanConfId}`,
-      `/api/s/${this.site}/list/wlanconf/${wlanConfId}`,
-      `/api/s/default/rest/wlanconf/${wlanConfId}`,
+      `/api/s/${this.site}/rest/wlanconf/${recordId(wlanConfId)}`,
+      `/api/s/${this.site}/list/wlanconf/${recordId(wlanConfId)}`,
+      `/api/s/${this.site}/rest/wlanconf/${recordId(wlanConfId)}`,
     ];
 
     for (const endpoint of endpoints) {
@@ -1161,9 +950,7 @@ export class UnifiClient {
         if (response.data?.[0]) {
           return this.normalizeSsid(response.data[0]);
         }
-      } catch {
-        // Try next endpoint
-      }
+      } catch (error) { throw error; }
     }
 
     return null;
@@ -1225,7 +1012,12 @@ export class UnifiClient {
       let apGroupIds = ssid.apGroupIds || [];
       if (!apGroupIds || apGroupIds.length === 0) {
         try {
-          const apGroupRes = await this.get<any>(`/proxy/network/v2/api/site/${this.site}/apgroups`);
+          let apGroupRes: any = null;
+          try {
+            apGroupRes = await this.get<any>(`/v2/api/site/${this.site}/apgroups`);
+          } catch {
+            apGroupRes = await this.get<any>(`/proxy/network/v2/api/site/${this.site}/apgroups`).catch(() => null);
+          }
           if (Array.isArray(apGroupRes)) {
             const defaultGroup = apGroupRes.find((g: any) => g.attr_hidden_id === 'default') || apGroupRes[0];
             if (defaultGroup?._id) {
@@ -1233,14 +1025,7 @@ export class UnifiClient {
             }
           }
         } catch {
-          // Fallback: check existing WLAN configuration
-          try {
-            const existing = await this.get<any>(`/api/s/${this.site}/rest/wlanconf`);
-            const first = existing.data?.find((w: any) => Array.isArray(w.ap_group_ids) && w.ap_group_ids.length > 0);
-            if (first) {
-              apGroupIds = first.ap_group_ids;
-            }
-          } catch {}
+          // Gracefully continue even if AP groups cannot be queried
         }
       }
 
@@ -1294,10 +1079,7 @@ export class UnifiClient {
       );
 
       return response.data?.[0] ? this.normalizeSsid(response.data[0]) : null;
-    } catch (err) {
-      console.error('[createSsid] Error creating SSID on UniFi:', err);
-      throw err;
-    }
+    } catch (err) { throw err; }
   }
 
   async updateSsid(wlanConfId: string, ssid: Partial<UnifiSsidRequest>): Promise<boolean> {
@@ -1334,32 +1116,20 @@ export class UnifiClient {
       }
 
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/wlanconf/${wlanConfId}`,
+        `/api/s/${this.site}/rest/wlanconf/${recordId(wlanConfId)}`,
         payload
       );
       return response?.meta?.rc === 'ok';
-    } catch (err) {
-      console.error('[updateSsid] Error updating SSID on UniFi:', err);
-      throw err;
-    }
+    } catch (err) { throw err; }
   }
 
   async deleteSsid(wlanConfId: string): Promise<boolean> {
     try {
       const response = await this.delete<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/wlanconf/${wlanConfId}`
+        `/api/s/${this.site}/rest/wlanconf/${recordId(wlanConfId)}`
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      try {
-        const response = await this.delete<{ meta?: { rc: string } }>(
-          `/api/s/default/rest/wlanconf/${wlanConfId}`
-        );
-        return response?.meta?.rc === 'ok';
-      } catch {
-        return false;
-      }
-    }
+    } catch (error) { throw error; }
   }
 
   async enableSsid(wlanConfId: string): Promise<boolean> {
@@ -1378,15 +1148,19 @@ export class UnifiClient {
     const endpoints = [
       `/api/s/${this.site}/rest/networkconf`,
       `/api/s/${this.site}/list/networkconf`,
-      '/api/s/default/rest/networkconf',
-      '/api/s/default/list/networkconf',
+      `/api/s/${this.site}/rest/networkconf`,
+      `/api/s/${this.site}/list/networkconf`,
     ];
 
     const merged = new Map<string, UnifiNetwork>();
 
-    for (const endpoint of endpoints) {
+    let lastMissing: unknown;
+    let succeeded = false;
+    for (const endpoint of Array.from(new Set(endpoints))) {
       try {
         const response = await this.get<UnifiListResponse<UnifiNetwork>>(endpoint);
+        if (!Array.isArray(response.data)) throw new Error('Phản hồi danh sách UniFi không hợp lệ');
+        succeeded = true;
         if (response.data) {
           for (const item of response.data) {
             const normalized = this.normalizeNetwork(item);
@@ -1400,18 +1174,20 @@ export class UnifiClient {
             });
           }
         }
-      } catch {
-        // Try next endpoint
+      } catch (error) {
+        if ((error as {status?:number}).status !== 404) throw error;
+        lastMissing = error;
       }
     }
 
+    if (!succeeded) throw lastMissing || new Error('Không tìm thấy endpoint danh sách UniFi');
     return Array.from(merged.values());
   }
 
   async getNetwork(networkId: string): Promise<UnifiNetwork | null> {
     const endpoints = [
-      `/api/s/${this.site}/rest/networkconf/${networkId}`,
-      `/api/s/default/rest/networkconf/${networkId}`,
+      `/api/s/${this.site}/rest/networkconf/${recordId(networkId)}`,
+      `/api/s/${this.site}/rest/networkconf/${recordId(networkId)}`,
     ];
 
     for (const endpoint of endpoints) {
@@ -1420,9 +1196,7 @@ export class UnifiClient {
         if (response.data?.[0]) {
           return this.normalizeNetwork(response.data[0]);
         }
-      } catch {
-        // Try next endpoint
-      }
+      } catch (error) { throw error; }
     }
 
     return null;
@@ -1454,32 +1228,26 @@ export class UnifiClient {
         payload
       );
       return response.data?.[0] || null;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   async updateNetwork(networkId: string, network: Partial<UnifiNetworkRequest>): Promise<boolean> {
     try {
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/networkconf/${networkId}`,
+        `/api/s/${this.site}/rest/networkconf/${recordId(networkId)}`,
         network
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   async deleteNetwork(networkId: string): Promise<boolean> {
     try {
       const response = await this.delete<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/networkconf/${networkId}`
+        `/api/s/${this.site}/rest/networkconf/${recordId(networkId)}`
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   // ============================================
@@ -1492,16 +1260,7 @@ export class UnifiClient {
         `/api/s/${this.site}/rest/usergroup`
       );
       return response.data || [];
-    } catch {
-      try {
-        const response = await this.get<UnifiListResponse<UnifiUserGroup>>(
-          '/api/s/default/rest/usergroup'
-        );
-        return response.data || [];
-      } catch {
-        return [];
-      }
-    }
+    } catch (error) { throw error; }
   }
 
   async createUserGroup(group: UnifiUserGroupRequest): Promise<UnifiUserGroup | null> {
@@ -1511,32 +1270,26 @@ export class UnifiClient {
         group
       );
       return response.data?.[0] || null;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   async updateUserGroup(groupId: string, group: Partial<UnifiUserGroupRequest>): Promise<boolean> {
     try {
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/usergroup/${groupId}`,
+        `/api/s/${this.site}/rest/usergroup/${recordId(groupId)}`,
         group
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   async deleteUserGroup(groupId: string): Promise<boolean> {
     try {
       const response = await this.delete<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/usergroup/${groupId}`
+        `/api/s/${this.site}/rest/usergroup/${recordId(groupId)}`
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   // ============================================
@@ -1547,38 +1300,22 @@ export class UnifiClient {
     try {
       const device = await this.getDevice(deviceId);
       return device?.portTable || null;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   async setPortSettings(deviceId: string, portIdx: number, settings: Partial<UnifiPortRequest>): Promise<boolean> {
-    try {
-      const payload: Record<string, unknown> = {
-        port_idx: portIdx,
-      };
-
-      if (settings.poeMode) {
-        payload.poe_mode = settings.poeMode;
-      }
-      if (settings.name) {
-        payload.name = settings.name;
-      }
-      if (settings.enable !== undefined) {
-        payload.enable = settings.enable;
-      }
-      if (settings.up !== undefined) {
-        payload.up = settings.up;
-      }
-
-      const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/device/${deviceId}`,
-        payload
-      );
-      return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    if (!Number.isInteger(portIdx) || portIdx < 1) throw new Error('Chỉ số cổng không hợp lệ');
+    const device = await this.getDevice(deviceId) as any;
+    if (!device || !(device.port_table || device.portTable || []).some((p:any)=>p.port_idx===portIdx)) throw new Error('Không tìm thấy cổng trên thiết bị');
+    const overrides = device.port_overrides || device.portOverrides || [];
+    const current = overrides.find((p:any)=>p.port_idx===portIdx) || {port_idx:portIdx};
+    const updated = {...current};
+    if (settings.poeMode) { if (!['auto','off','passthrough'].includes(settings.poeMode)) throw new Error('Chế độ PoE không hợp lệ'); updated.poe_mode=settings.poeMode; }
+    if (settings.name!==undefined) updated.name=settings.name;
+    if (settings.enable!==undefined) updated.op_mode=settings.enable?'switch':'disabled';
+    const port_overrides = overrides.some((p:any)=>p.port_idx===portIdx)?overrides.map((p:any)=>p.port_idx===portIdx?updated:p):[...overrides,updated];
+    const response=await this.put<{meta?:{rc:string}}>(`/api/s/${this.site}/rest/device/${recordId(deviceId)}`,{port_overrides});
+    return response?.meta?.rc==='ok';
   }
 
   async enablePoE(deviceId: string, portIdx: number): Promise<boolean> {
@@ -1597,9 +1334,7 @@ export class UnifiClient {
     try {
       const device = await this.getDevice(deviceId);
       return device?.radioTable || null;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   async updateRadioSettings(deviceId: string, settings: UnifiRadioRequest): Promise<boolean> {
@@ -1631,13 +1366,11 @@ export class UnifiClient {
       }
 
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/device/${deviceId}`,
+        `/api/s/${this.site}/rest/device/${recordId(deviceId)}`,
         payload
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   async enableRadio(deviceId: string, radio: string): Promise<boolean> {
@@ -1658,16 +1391,7 @@ export class UnifiClient {
         `/api/s/${this.site}/rest/firewallrule`
       );
       return response.data || [];
-    } catch {
-      try {
-        const response = await this.get<UnifiListResponse<UnifiFirewallRule>>(
-          '/api/s/default/rest/firewallrule'
-        );
-        return response.data || [];
-      } catch {
-        return [];
-      }
-    }
+    } catch (error) { throw error; }
   }
 
   async createFirewallRule(rule: UnifiFirewallRuleRequest): Promise<UnifiFirewallRule | null> {
@@ -1690,32 +1414,26 @@ export class UnifiClient {
         payload
       );
       return response.data?.[0] || null;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   async updateFirewallRule(ruleId: string, rule: Partial<UnifiFirewallRuleRequest>): Promise<boolean> {
     try {
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/firewallrule/${ruleId}`,
+        `/api/s/${this.site}/rest/firewallrule/${recordId(ruleId)}`,
         rule
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   async deleteFirewallRule(ruleId: string): Promise<boolean> {
     try {
       const response = await this.delete<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/firewallrule/${ruleId}`
+        `/api/s/${this.site}/rest/firewallrule/${recordId(ruleId)}`
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   // ============================================
@@ -1728,9 +1446,7 @@ export class UnifiClient {
         `/api/s/${this.site}/rest/portforward`
       );
       return response.data || [];
-    } catch {
-      return [];
-    }
+    } catch (error) { throw error; }
   }
 
   async createPortForward(forward: UnifiPortForwardRequest): Promise<UnifiPortForward | null> {
@@ -1740,32 +1456,26 @@ export class UnifiClient {
         forward
       );
       return response.data?.[0] || null;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   async updatePortForward(forwardId: string, forward: Partial<UnifiPortForwardRequest>): Promise<boolean> {
     try {
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/portforward/${forwardId}`,
+        `/api/s/${this.site}/rest/portforward/${recordId(forwardId)}`,
         forward
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   async deletePortForward(forwardId: string): Promise<boolean> {
     try {
       const response = await this.delete<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/portforward/${forwardId}`
+        `/api/s/${this.site}/rest/portforward/${recordId(forwardId)}`
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   // ============================================
@@ -1778,9 +1488,7 @@ export class UnifiClient {
         `/api/s/${this.site}/rest/dhcpreservation`
       );
       return response.data || [];
-    } catch {
-      return [];
-    }
+    } catch (error) { throw error; }
   }
 
   async createDhcpReservation(reservation: UnifiDhcpReservationRequest): Promise<UnifiDhcpReservation | null> {
@@ -1790,20 +1498,16 @@ export class UnifiClient {
         reservation
       );
       return response.data?.[0] || null;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   async deleteDhcpReservation(reservationId: string): Promise<boolean> {
     try {
       const response = await this.delete<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/dhcpreservation/${reservationId}`
+        `/api/s/${this.site}/rest/dhcpreservation/${recordId(reservationId)}`
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   async getDhcpPools(): Promise<UnifiDhcpPool[]> {
@@ -1812,9 +1516,7 @@ export class UnifiClient {
         `/api/s/${this.site}/rest/dhcppool`
       );
       return response.data || [];
-    } catch {
-      return [];
-    }
+    } catch (error) { throw error; }
   }
 
   // ============================================
@@ -1824,7 +1526,6 @@ export class UnifiClient {
   async getHealth(): Promise<UnifiHealth> {
     const endpoints = [
       `/api/s/${this.site}/stat/health`,
-      '/api/s/default/stat/health',
     ];
 
     for (const endpoint of endpoints) {
@@ -1834,7 +1535,7 @@ export class UnifiClient {
           return this.normalizeHealth(response.data);
         }
       } catch {
-        // Try next endpoint
+        // Continue to fallback
       }
     }
 
@@ -1850,7 +1551,8 @@ export class UnifiClient {
         return response.data[0];
       }
     } catch {
-      // Fall through to derived stats
+      // /stat/report/dashboard is not supported on all controllers (e.g. returns 400 InvalidArgs or 404).
+      // Fall through to compute dashboard stats from devices and clients.
     }
 
     const [devices, clients] = await Promise.all([
@@ -1879,150 +1581,9 @@ export class UnifiClient {
   }
 
   async getTopology() {
-    const [devices, clients, networks] = await Promise.all([
-      this.getDevices(),
-      this.getClients(),
-      this.getNetworks(),
-    ]);
-
-    const nodeMap = new Map<string, {
-      id: string;
-      type: 'gateway' | 'switch' | 'ap' | 'network' | 'client';
-      name: string;
-      status?: string;
-      mac?: string;
-      ip?: string;
-      meta?: Record<string, unknown>;
-    }>();
-
-    const links: Array<{
-      source: string;
-      target: string;
-      type: 'uplink' | 'wired' | 'wireless' | 'network';
-    }> = [];
-
-    for (const network of networks) {
-      const networkId = `network:${network._id || network.name}`;
-      nodeMap.set(networkId, {
-        id: networkId,
-        type: 'network',
-        name: network.name,
-        status: network.enabled ? 'online' : 'offline',
-        meta: {
-          purpose: network.purpose,
-          vlanId: network.vlanId,
-          subnet: network.ipSubnet,
-          stations: network.numStations,
-        },
-      });
-    }
-
-    const gateways: string[] = [];
-    const deviceByMac = new Map<string, string>();
-
-    for (const device of devices) {
-      const deviceId = `device:${device.mac || device._id}`;
-      const lowerType = String(device.type || '').toLowerCase();
-      const type: 'gateway' | 'switch' | 'ap' =
-        lowerType === 'ugw' || lowerType === 'udm' || lowerType === 'gateway' || lowerType === 'router'
-          ? 'gateway'
-          : lowerType === 'usw' || lowerType === 'switch'
-            ? 'switch'
-            : 'ap';
-
-      if (device.mac) {
-        deviceByMac.set(device.mac.toLowerCase(), deviceId);
-      }
-
-      if (type === 'gateway') {
-        gateways.push(deviceId);
-      }
-
-      nodeMap.set(deviceId, {
-        id: deviceId,
-        type,
-        name: device.name || device.model || device.mac,
-        status: device.status,
-        mac: device.mac,
-        ip: device.ipAddress,
-        meta: {
-          model: device.model,
-          clients: this.toNumber(device.userNumSta, 0) + this.toNumber(device.guestNumSta, 0),
-        },
-      });
-    }
-
-    for (const device of devices) {
-      const deviceId = `device:${device.mac || device._id}`;
-      const uplinkMac =
-        (device as any)?.uplink?.mac ||
-        (device as any)?.uplink?.uplinkMac ||
-        (device as any)?.uplink?.uplink_mac;
-
-      if (typeof uplinkMac === 'string' && deviceByMac.has(uplinkMac.toLowerCase())) {
-        links.push({
-          source: deviceByMac.get(uplinkMac.toLowerCase()) as string,
-          target: deviceId,
-          type: 'uplink',
-        });
-      }
-    }
-
-    if (gateways.length > 0) {
-      const rootGateway = gateways[0];
-
-      for (const network of networks) {
-        const networkId = `network:${network._id || network.name}`;
-        links.push({ source: rootGateway, target: networkId, type: 'network' });
-      }
-    }
-
-    for (const client of clients.slice(0, 250)) {
-      const clientId = `client:${client.mac}`;
-      nodeMap.set(clientId, {
-        id: clientId,
-        type: 'client',
-        name: client.hostname || client.name || client.mac,
-        status: client.isBlocked ? 'blocked' : 'active',
-        mac: client.mac,
-        ip: client.ip,
-        meta: {
-          ssid: client.ssid,
-          guest: client.isGuest,
-          signal: client.signal,
-        },
-      });
-
-      const apId = client.apMac ? deviceByMac.get(client.apMac.toLowerCase()) : undefined;
-      if (apId) {
-        links.push({
-          source: apId,
-          target: clientId,
-          type: client.isWired ? 'wired' : 'wireless',
-        });
-        continue;
-      }
-
-      if (gateways[0]) {
-        links.push({
-          source: gateways[0],
-          target: clientId,
-          type: client.isWired ? 'wired' : 'wireless',
-        });
-      }
-    }
-
-    return {
-      nodes: Array.from(nodeMap.values()),
-      links,
-      summary: {
-        gateways: Array.from(nodeMap.values()).filter((node) => node.type === 'gateway').length,
-        switches: Array.from(nodeMap.values()).filter((node) => node.type === 'switch').length,
-        accessPoints: Array.from(nodeMap.values()).filter((node) => node.type === 'ap').length,
-        networks: Array.from(nodeMap.values()).filter((node) => node.type === 'network').length,
-        clients: Array.from(nodeMap.values()).filter((node) => node.type === 'client').length,
-      },
-    };
+    const { buildUnifiTopology } = await import('@/lib/network/topology');
+    const [devices, clients] = await Promise.all([this.getDevices(), this.getClients()]);
+    return buildUnifiTopology(devices as any[], clients as any[]);
   }
 
   async runSpeedtest(): Promise<boolean> {
@@ -2031,39 +1592,31 @@ export class UnifiClient {
         `/api/s/${this.site}/cmd/sitemgr/run-speedtest`
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   async getSpeedtestResults(): Promise<unknown> {
     try {
       const response = await this.get(`/api/s/${this.site}/stat/speedtest`);
       return response;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   async getDpiStats(): Promise<unknown> {
     try {
       const response = await this.get(`/api/s/${this.site}/stat/dpi`);
       return response;
-    } catch {
-      return null;
-    }
+    } catch (error) { throw error; }
   }
 
   async setDpiEnabled(siteId: string, enabled: boolean): Promise<boolean> {
     try {
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${siteId}/rest/setting/dpi`,
+        `/api/s/${recordId(siteId)}/rest/setting/dpi`,
         { enabled }
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   // ============================================
@@ -2073,19 +1626,20 @@ export class UnifiClient {
   async getAlerts(archived?: boolean): Promise<UnifiAlert[]> {
     try {
       const url = archived !== undefined
-        ? `/api/s/${this.site}/stat/event?archived=${archived}`
-        : `/api/s/${this.site}/stat/event`;
-      const response = await this.get<UnifiListResponse<UnifiAlert>>(url);
-      return (response.data || []).map((alert) => this.normalizeAlert(alert));
-    } catch {
+        ? `/api/s/${this.site}/stat/alarm?archived=${archived}`
+        : `/api/s/${this.site}/stat/alarm`;
+      let response: UnifiListResponse<UnifiAlert> | null = null;
       try {
-        const response = await this.get<UnifiListResponse<UnifiAlert>>(
-          '/api/s/default/stat/event'
-        );
-        return (response.data || []).map((alert) => this.normalizeAlert(alert));
+        response = await this.get<UnifiListResponse<UnifiAlert>>(url);
       } catch {
-        return [];
+        const eventUrl = archived !== undefined
+          ? `/api/s/${this.site}/stat/event?archived=${archived}`
+          : `/api/s/${this.site}/stat/event`;
+        response = await this.get<UnifiListResponse<UnifiAlert>>(eventUrl).catch(() => ({ data: [] }));
       }
+      return (response?.data || []).map((alert) => this.normalizeAlert(alert));
+    } catch {
+      return [];
     }
   }
 
@@ -2094,8 +1648,8 @@ export class UnifiClient {
       const url = limit
         ? `/api/s/${this.site}/stat/event?limit=${limit}`
         : `/api/s/${this.site}/stat/event`;
-      const response = await this.get<UnifiListResponse<UnifiEvent>>(url);
-      return (response.data || []).map((event) => this.normalizeAlert(event) as unknown as UnifiEvent);
+      const response = await this.get<UnifiListResponse<UnifiEvent>>(url).catch(() => ({ data: [] }));
+      return (response?.data || []).map((event) => this.normalizeAlert(event) as unknown as UnifiEvent);
     } catch {
       return [];
     }
@@ -2104,13 +1658,11 @@ export class UnifiClient {
   async dismissAlert(alertId: string): Promise<boolean> {
     try {
       const response = await this.put<{ meta?: { rc: string } }>(
-        `/api/s/${this.site}/rest/event/${alertId}`,
+        `/api/s/${this.site}/rest/event/${recordId(alertId)}`,
         { isDismissed: true, isArchived: true }
       );
       return response?.meta?.rc === 'ok';
-    } catch {
-      return false;
-    }
+    } catch (error) { throw error; }
   }
 
   // ============================================
@@ -2153,7 +1705,7 @@ export class UnifiClient {
       username: DEFAULT_USERNAME,
       password: DEFAULT_PASSWORD,
       site: DEFAULT_SITE,
-      rejectUnauthorized: false,
+      rejectUnauthorized: true,
     };
   }
 }
@@ -2180,87 +1732,4 @@ export function resetUnifiClient(): void {
   _unifiClient = null;
 }
 
-// ============================================
-// Utility Functions
-// ============================================
-
-export function formatBytes(bytes: number): string {
-  const safeBytes = Number(bytes);
-  if (!Number.isFinite(safeBytes) || safeBytes <= 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(safeBytes) / Math.log(k));
-  return `${parseFloat((safeBytes / Math.pow(k, i)).toFixed(2))} ${sizes[i]}`;
-}
-
-export function formatUptime(seconds: number): string {
-  const safeSeconds = Number(seconds);
-  if (!Number.isFinite(safeSeconds) || safeSeconds <= 0) {
-    return '0m';
-  }
-
-  const days = Math.floor(safeSeconds / 86400);
-  const hours = Math.floor((safeSeconds % 86400) / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-
-  if (days > 0) return `${days}d ${hours}h`;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
-export function formatSignal(signal: number): string {
-  const safeSignal = Number(signal);
-  if (!Number.isFinite(safeSignal)) return 'Unknown';
-  if (safeSignal >= -30) return 'Excellent';
-  if (safeSignal >= -50) return 'Good';
-  if (safeSignal >= -60) return 'Fair';
-  if (safeSignal >= -70) return 'Poor';
-  return 'Very Poor';
-}
-
-export function getSignalColor(signal: number): string {
-  const safeSignal = Number(signal);
-  if (!Number.isFinite(safeSignal)) return 'text-slate-400';
-  if (safeSignal >= -50) return 'text-green-500';
-  if (safeSignal >= -60) return 'text-yellow-500';
-  if (safeSignal >= -70) return 'text-orange-500';
-  return 'text-red-500';
-}
-
-export function getDeviceTypeIcon(type: string): string {
-  const icons: Record<string, string> = {
-    uap: 'Access Point',
-    usw: 'Switch',
-    ugw: 'Gateway',
-    udm: 'Dream Machine',
-    switch: 'Switch',
-    router: 'Router',
-    gateway: 'Gateway',
-  };
-  return icons[type] || type;
-}
-
-export function getDeviceStatusColor(status: string): string {
-  const colors: Record<string, string> = {
-    online: 'bg-green-500',
-    offline: 'bg-red-500',
-    upgrading: 'bg-yellow-500',
-    disconnected: 'bg-gray-500',
-  };
-  return colors[status] || 'bg-gray-500';
-}
-
-export function getSecurityTypeLabel(security: string): string {
-  const labels: Record<string, string> = {
-    open: 'Open (No Security)',
-    wep: 'WEP',
-    wpapsk: 'WPA Personal',
-    wpa2psk: 'WPA2 Personal',
-    'wpapsk+ wpa2psk': 'WPA/WPA2 Personal',
-    'wpaowpa2ent': 'WPA/WPA2 Enterprise',
-    wpawpa2psk: 'WPA/WPA2 Personal',
-    'wpa3': 'WPA3 Personal',
-    'wpa3-ent': 'WPA3 Enterprise',
-  };
-  return labels[security] || security;
-}
+export * from '@/lib/network/format';

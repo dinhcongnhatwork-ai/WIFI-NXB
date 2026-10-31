@@ -174,6 +174,7 @@ export default function CmsTopBar({
         <div className="w-px h-4 bg-gray-200 mx-0.5" />
 
         <select
+          aria-label="Kích thước canvas"
           value={activePresetIndex}
           onChange={(e) => onSelectPreset(Number(e.target.value))}
           disabled={isComparing}
@@ -260,7 +261,7 @@ export default function CmsTopBar({
               ? 'bg-amber-50 text-amber-700 border-amber-200 shadow-sm'
               : 'bg-white hover:bg-gray-50 text-gray-600 border-gray-200'
           }`}
-          title="Chuyển đổi giữa chế độ chỉnh sửa và mô phỏng luồng WiFi"
+          title="Chọn màn hình xem trước"
         >
           {mode === 'simulate' ? (
             <>
@@ -270,7 +271,7 @@ export default function CmsTopBar({
           ) : (
             <>
               <Play className="w-3.5 h-3.5" />
-              <span>Mô phỏng</span>
+              <span>Xem trước</span>
             </>
           )}
         </button>

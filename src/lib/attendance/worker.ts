@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import { redis } from '@/lib/redis';
 import { runAttendanceMonitorTick } from './monitor';
 
 let isRunning = false;
@@ -22,6 +23,7 @@ export function startAttendanceWorker(intervalMs = 3000) {
     if (!isCycleExecuting) {
       isCycleExecuting = true;
       try {
+        await redis.set('monitor:attendance:heartbeat', JSON.stringify({at:Date.now()}), 'EX', 30).catch(() => {});
         const activeCount = await prisma.attendanceSession.count({
           where: { status: 'ACTIVE' },
         });

@@ -40,12 +40,19 @@ import {
   createNode,
   createSection,
   COMPONENT_LABELS,
+  type ScreenId,
+  screenSurface,
+  flattenNodes,
 } from '@/lib/template-document';
 import { MediaLibrary } from '@/components/media';
+import type { MediaItem } from '@/components/media/MediaPicker';
 
 interface CmsLeftSidebarProps {
   document: TemplateDocumentV2;
   device: DeviceVariant;
+  screen?: ScreenId;
+  onAddMedia?: (url: string, item?: MediaItem) => void;
+  onAddSlides?: (items: MediaItem[]) => void;
   selectedNodeId: string | null;
   selectedSectionId: string | null;
   onSelectNode: (nodeId: string | null, sectionId?: string | null) => void;
@@ -67,6 +74,9 @@ type TabType = 'components' | 'layers' | 'media';
 export default function CmsLeftSidebar({
   document,
   device,
+  screen = 'portal',
+  onAddMedia,
+  onAddSlides,
   selectedNodeId,
   selectedSectionId,
   onSelectNode,
@@ -82,13 +92,14 @@ export default function CmsLeftSidebar({
   onMoveSection,
   onRenameNode,
 }: CmsLeftSidebarProps) {
+  const [sliderSelection, setSliderSelection] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('components');
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(() => typeof window !== 'undefined' && window.innerWidth < 1100);
   const [componentSearch, setComponentSearch] = useState('');
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
 
-  const activeVariant = document.variants[device];
+  const activeVariant = screenSurface(document.variants[device], screen);
 
   const componentCategories: {
     category: string;
@@ -133,7 +144,7 @@ export default function CmsLeftSidebar({
   const filteredCategories = componentCategories
     .map((cat) => ({
       ...cat,
-      items: cat.items.filter((item) =>
+      items: cat.items.filter(item => !['attendance_gate', 'video_gate', 'announcement'].includes(item.type) && (screen === 'portal' || item.type !== 'connect_button')).filter((item) =>
         item.label.toLowerCase().includes(componentSearch.toLowerCase()) ||
         item.desc.toLowerCase().includes(componentSearch.toLowerCase())
       ),
@@ -199,7 +210,7 @@ export default function CmsLeftSidebar({
   }
 
   return (
-    <aside className="w-[280px] bg-white border-r border-gray-200 flex flex-col z-30 shrink-0 select-none text-gray-700">
+    <aside className="w-[248px] bg-white border-r border-gray-200 flex flex-col z-30 shrink-0 select-none text-gray-700">
       {/* Tabs Header */}
       <div className="h-12 border-b border-gray-200 px-3 flex items-center justify-between">
         <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-xl border border-gray-200/80">
@@ -397,7 +408,7 @@ export default function CmsLeftSidebar({
                         Trống. Nhấn + ở tab Thành phần để thêm.
                       </p>
                     ) : (
-                      section.nodes.map((node: DesignNode, nIndex: number) => {
+                      flattenNodes(section.nodes).map((node: DesignNode, nIndex: number) => {
                         const isNodeSelected = node.id === selectedNodeId;
 
                         return (
@@ -486,7 +497,7 @@ export default function CmsLeftSidebar({
                                 )}
                               </button>
                               <button
-                                onClick={() => onToggleHideNode(section.id, node.id)}
+                                disabled={node.element.type === 'flow_content'} onClick={() => onToggleHideNode(section.id, node.id)}
                                 className="p-0.5 hover:text-gray-900"
                                 title={node.hidden ? 'Hiện' : 'Ẩn'}
                               >
@@ -497,14 +508,14 @@ export default function CmsLeftSidebar({
                                 )}
                               </button>
                               <button
-                                onClick={() => onDuplicateNode(section.id, node.id)}
+                                disabled={node.element.type === 'flow_content'} onClick={() => onDuplicateNode(section.id, node.id)}
                                 className="p-0.5 hover:text-gray-900 text-gray-400"
                                 title="Nhân bản"
                               >
                                 <Copy className="w-3 h-3" />
                               </button>
                               <button
-                                onClick={() => onDeleteNode(section.id, node.id)}
+                                disabled={node.element.type === 'flow_content'} onClick={() => onDeleteNode(section.id, node.id)}
                                 className="p-0.5 hover:text-rose-500 text-gray-400"
                                 title="Xóa"
                               >
@@ -526,11 +537,8 @@ export default function CmsLeftSidebar({
       {/* Tab Content: Media Library */}
       {activeTab === 'media' && (
         <div className="flex-1 overflow-y-auto p-3">
-          <MediaLibrary
-            onSelect={(url: string) => {
-              onAddNode('image');
-            }}
-          />
+          <div className="mb-3 flex gap-1 rounded-lg bg-slate-100 p-1 text-xs"><button className={`flex-1 rounded-md py-2 ${!sliderSelection ? 'bg-white text-blue-600 shadow-sm' : ''}`} onClick={() => setSliderSelection(false)}>Ảnh / Video</button><button className={`flex-1 rounded-md py-2 ${sliderSelection ? 'bg-white text-blue-600 shadow-sm' : ''}`} onClick={() => setSliderSelection(true)}>Tạo slider</button></div>
+          <MediaLibrary key={sliderSelection ? 'slides' : 'single'} accept={sliderSelection ? 'image/*' : 'image/*,video/*'} onSelect={onAddMedia} onSelectMany={sliderSelection ? onAddSlides : undefined} />
         </div>
       )}
     </aside>

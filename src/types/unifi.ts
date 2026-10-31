@@ -14,8 +14,8 @@ export interface UnifiDevice {
   ipAddress?: string;
   macAddress?: string;
   serialNumber?: string;
-  uptime: number;
-  status: 'online' | 'offline' | 'upgrading' | 'disconnected';
+  uptime?: number;
+  status: 'online' | 'offline' | 'upgrading' | 'disconnected' | 'unknown';
   isConnected: boolean;
   lastSeen?: number;
   uptimeSince?: number;

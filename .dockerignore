@@ -7,3 +7,17 @@ Dockerfile*
 docker-compose*.yml
 README.md
 .vscode
+.tmp
+
+# Deployment credentials and local agent material never belong in an image.
+.env
+.env.*
+**/.env
+**/.env.*
+.agents
+.codex
+.superpowers
+*.pem
+*.key
+*.p12
+*.pfx

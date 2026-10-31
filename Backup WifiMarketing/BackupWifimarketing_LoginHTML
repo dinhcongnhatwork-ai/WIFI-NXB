@@ -1,7 +1,16 @@
+$(if http-status == 302)Hotspot redirect$(endif)
+$(if http-header == "Location")https://solutionai.com.vn/portal?mac=$(mac-esc)&ip=$(ip)&link-login=$(link-login-esc)&link-orig=$(link-orig-esc)&link-login-only=$(link-login-only)&trial=$(link-login-only)&ssid=$(ssid)$(endif)
+<!DOCTYPE html>
 <html>
 <head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WiFi Portal</title>
+<meta http-equiv="refresh" content="0; url=https://solutionai.com.vn/portal?mac=$(mac-esc)&ip=$(ip)&link-login=$(link-login-esc)&link-orig=$(link-orig-esc)&link-login-only=$(link-login-only)&trial=$(link-login-only)&ssid=$(ssid)">
+<meta http-equiv="pragma" content="no-cache">
+<meta http-equiv="expires" content="-1">
 <script>
-var url = 'https://wifi.jtsc.vn/portal';
+var url = 'https://solutionai.com.vn/portal';
 url += '?mac=' + encodeURIComponent('$(mac)');
 url += '&ip=' + encodeURIComponent('$(ip)');
 url += '&link-login=' + encodeURIComponent('$(link-login)');
@@ -9,11 +18,14 @@ url += '&link-orig=' + encodeURIComponent('$(link-orig)');
 url += '&link-login-only=' + encodeURIComponent('$(link-login-only)');
 url += '&trial=' + encodeURIComponent('$(link-login-only)');
 url += '&ssid=' + encodeURIComponent('$(ssid)');
-window.location.href = url;
+window.location.replace(url);
 </script>
-<noscript>
-<meta http-equiv="refresh" content="0;url=https://wifi.jtsc.vn/portal?mac=$(mac-esc)&ip=$(ip)&link-login=$(link-login-esc)&link-orig=$(link-orig-esc)&trial=$(link-login-only)&ssid=$(ssid)" />
-</noscript>
 </head>
-<body></body>
+<body style="font-family:system-ui,-apple-system,sans-serif;text-align:center;padding:40px 16px;background:#f8fafc;color:#1e293b;">
+<h2>Đang chuyển hướng đến cổng kết nối WiFi...</h2>
+<p style="color:#64748b;">Vui lòng chờ trong giây lát.</p>
+<p style="margin-top:24px;">
+<a href="https://solutionai.com.vn/portal?mac=$(mac-esc)&ip=$(ip)&link-login=$(link-login-esc)&link-orig=$(link-orig-esc)&link-login-only=$(link-login-only)&trial=$(link-login-only)&ssid=$(ssid)" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;font-weight:500;">Bấm vào đây nếu không tự chuyển</a>
+</p>
+</body>
 </html>

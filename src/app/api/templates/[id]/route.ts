@@ -1,10 +1,12 @@
+export const dynamic = 'force-dynamic';
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { authenticateRequest } from '@/lib/auth';
 import { isLegacyLocalUploadUrl } from '@/types';
-import { expectedVersion, normalizeDraft, PublishingError, saveDraft, templateForRead } from '@/lib/template-publishing';
+import { expectedVersion, normalizeDraft, publishDraft, PublishingError, saveDraft, templateForRead } from '@/lib/template-publishing';
 
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -32,7 +34,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
+async function handlePUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -59,6 +61,23 @@ export async function PUT(
           : null;
     }
 
+    if (templateStatus === 'published') {
+      const current = await prisma.template.findUnique({ where: { id: params.id } });
+      if (!current) return NextResponse.json({ success: false, error: 'Template not found' }, { status: 404 });
+      if (name !== undefined || layoutJson !== undefined || thumbnail !== undefined) {
+        delete data.status;
+        await saveDraft(prisma, params.id, version, data);
+      }
+      const updated = await prisma.template.findUniqueOrThrow({ where: { id: params.id } });
+      const published = await publishDraft(
+        prisma,
+        params.id,
+        updated.draftVersion,
+        String(user.id || user.username || 'admin')
+      );
+      return NextResponse.json({ success: true, data: templateForRead(published) });
+    }
+
     const template = await saveDraft(prisma, params.id, version, data);
 
     return NextResponse.json({ success: true, data: templateForRead(template) });
@@ -72,7 +91,7 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
+async function handleDELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -82,6 +101,8 @@ export async function DELETE(
   }
 
   try {
+    const references = await prisma.attendanceSession.count({ where: { templateId: params.id } });
+    if (references) return NextResponse.json({ success: false, error: 'Mẫu đang được dùng trực tiếp bởi buổi điểm danh. Hãy đổi mẫu hoặc xóa buổi điểm danh trước.' }, { status: 409 });
     await prisma.template.delete({ where: { id: params.id } });
     return NextResponse.json({ success: true });
   } catch (error) {
@@ -92,3 +113,9 @@ export async function DELETE(
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);
+
+export const PUT = withPermission('operate', handlePUT);
+
+export const DELETE = withPermission('operate', handleDELETE);

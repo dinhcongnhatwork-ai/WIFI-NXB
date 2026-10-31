@@ -1,4 +1,5 @@
 'use client';
+import { networkFetch } from '@/components/network/client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
@@ -23,7 +24,7 @@ export default function MikrotikInterfacesPage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await fetch('/api/mikrotik/interfaces');
+      const res = await networkFetch('/api/mikrotik/interfaces');
       const json = (await res.json()) as { success: boolean; data?: MikrotikInterface[]; error?: string };
       if (!json.success || !json.data) {
         throw new Error(json.error || 'Không thể tải interfaces');
@@ -43,7 +44,7 @@ export default function MikrotikInterfacesPage() {
   const handleToggle = async (item: MikrotikInterface) => {
     try {
       setActionId(item.id);
-      const res = await fetch('/api/mikrotik/interfaces', {
+      const res = await networkFetch('/api/mikrotik/interfaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: item.disabled ? 'enable' : 'disable', id: item.id }),

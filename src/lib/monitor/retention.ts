@@ -1,0 +1,3 @@
+import { prisma } from '@/lib/prisma';
+async function purge(model:any,days:number){if(!Number.isFinite(days)||days<1)throw new Error('Retention days must be positive');const before=new Date(Date.now()-days*86400000);let removed=0;for(let batch=0;batch<100;batch++){const rows=await model.findMany({where:{createdAt:{lt:before}},select:{id:true},take:1000});if(!rows.length)break;const result=await model.deleteMany({where:{id:{in:rows.map((r:any)=>r.id)}}});removed+=result.count;await new Promise(r=>setTimeout(r,25));}return removed;}
+export async function runRetention(){return {logs:await purge(prisma.operationalLog,Number(process.env.MONITOR_LOG_RETENTION_DAYS||30)),audits:await purge(prisma.auditLog,Number(process.env.MONITOR_AUDIT_RETENTION_DAYS||365))};}

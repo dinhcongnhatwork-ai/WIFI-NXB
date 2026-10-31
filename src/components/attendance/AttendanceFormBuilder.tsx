@@ -507,7 +507,7 @@ export default function AttendanceFormBuilder({
                 {/* Submit Button */}
                 <button
                   type="button"
-                  className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-[0.98] transition-transform"
+                  className="w-full py-3 rounded-xl bg-blue-600 text-white font-bold text-xs shadow-md shadow-blue-500/20 active:scale-[0.98] transition-transform"
                 >
                   {confirmButtonText}
                 </button>

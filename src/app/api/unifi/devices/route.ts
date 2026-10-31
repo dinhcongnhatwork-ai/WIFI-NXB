@@ -1,3 +1,5 @@
+import { legacyMutation } from '@/lib/network/legacy-mutation';
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { getUnifiClientFromRequest } from '@/lib/settings';
 import { UnifiDevice } from '@/types/unifi';
@@ -25,7 +27,7 @@ function transformDevice(device: any): UnifiDevice {
   };
 }
 
-export async function GET(req: NextRequest) {
+async function handleGET(req: NextRequest) {
   try {
     const client = await getUnifiClientFromRequest(req);
     await client.login();
@@ -65,7 +67,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
-export async function POST(req: NextRequest) {
+async function handlePOST(req: NextRequest) {
   try {
     const client = await getUnifiClientFromRequest(req);
     await client.login();
@@ -87,8 +89,20 @@ export async function POST(req: NextRequest) {
         }
         break;
       case 'reboot':
+      case 'restart':
         if (deviceId) {
           result = await client.rebootDevice(deviceId);
+        }
+        break;
+      case 'locate':
+        if (deviceId) {
+          result = await client.setLocate(deviceId, body.locate !== false);
+        }
+        break;
+      case 'provision':
+      case 'force-provision':
+        if (deviceId) {
+          result = await client.forceProvision(deviceId);
         }
         break;
       case 'upgrade':
@@ -135,3 +149,6 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);
+export const POST = withPermission('operate', legacyMutation('UNIFI', handlePOST, handleGET));

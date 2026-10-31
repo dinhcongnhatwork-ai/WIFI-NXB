@@ -1,0 +1,7 @@
+# To enable, mount certificates into syslog-ng and include this source in the log path.
+# Add host binding management-IP:6514:6514/tcp; keep the source IP allowlist and firewall.
+source s_network_tls {
+  network(ip("0.0.0.0") port(6514) transport("tls")
+    tls(key-file("/etc/syslog-ng/tls/server.key") cert-file("/etc/syslog-ng/tls/server.crt")
+        ca-dir("/etc/syslog-ng/tls/ca") peer-verify(required-trusted)));
+};

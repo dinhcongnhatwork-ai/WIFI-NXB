@@ -70,6 +70,8 @@ export interface AttendanceSessionDto {
   id: string;
   name: string;
   location?: string | null;
+  templateId?: string | null;
+  templateName?: string | null;
   campaignId?: string | null;
   campaignName?: string | null;
   unifiSite: string;
@@ -184,6 +186,8 @@ export interface PortalAttendanceSubmitRequest {
   sessionId?: string;
   campaignId?: string;
   ssid?: string;
+  apMac?: string;
+  portalSessionId?: string;
   mac: string;
   ip?: string;
   answers: Record<string, any>;

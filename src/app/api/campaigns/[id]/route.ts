@@ -1,9 +1,11 @@
+export const dynamic = 'force-dynamic';
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { authenticateRequest } from '@/lib/auth';
 import { normalizeRedirectUrl } from '@/lib/redirect-url';
 
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -38,7 +40,7 @@ export async function GET(
   }
 }
 
-export async function PUT(
+async function handlePUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -94,7 +96,7 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
+async function handleDELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
@@ -114,3 +116,9 @@ export async function DELETE(
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);
+
+export const PUT = withPermission('operate', handlePUT);
+
+export const DELETE = withPermission('operate', handleDELETE);

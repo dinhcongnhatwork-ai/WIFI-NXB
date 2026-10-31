@@ -7,6 +7,7 @@ import type { DeviceVariant, Viewport } from '@/lib/template-document';
 export interface DeviceFrameHandle {
   /** Returns the bounding rect of the screen area in viewport (client) coordinates */
   getScreenRect: () => DOMRect | null;
+  getIframeRect: () => DOMRect | null;
   getIframeWindow: () => Window | null;
   getIframeDocument: () => Document | null;
 }
@@ -47,6 +48,7 @@ const DeviceFrame = forwardRef<DeviceFrameHandle, DeviceFrameProps>(function Dev
 
   useImperativeHandle(ref, () => ({
     getScreenRect: () => screenRef.current?.getBoundingClientRect() ?? null,
+    getIframeRect: () => iframe.current?.getBoundingClientRect() ?? null,
     getIframeWindow: () => iframe.current?.contentWindow ?? null,
     getIframeDocument: () => iframe.current?.contentDocument ?? null,
   }));
@@ -81,17 +83,6 @@ const DeviceFrame = forwardRef<DeviceFrameHandle, DeviceFrameProps>(function Dev
         subtree: true,
         characterData: true,
         attributes: true,
-      });
-
-      // Forward clicks on nodes inside iframe
-      doc.addEventListener('click', (e) => {
-        const target = e.target as HTMLElement;
-        const nodeEl = target.closest('[data-node-id]');
-        if (nodeEl) {
-          const nodeId = nodeEl.getAttribute('data-node-id')!;
-          const sectionId = nodeEl.getAttribute('data-section-id') || nodeEl.closest('[data-section-id]')?.getAttribute('data-section-id') || '';
-          nodeClickRef.current?.(nodeId, sectionId);
-        }
       });
 
       setBody(doc.body);

@@ -1,14 +1,17 @@
+import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { authenticateRequest } from '@/lib/auth';
 import { detectDeviceVendor } from '@/lib/attendance/constants';
 import { broadcastSessionUpdate } from '@/lib/attendance/monitor';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET(
+async function handleGET(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  if (!authenticateRequest(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const { id } = params;
     const registrations = await prisma.attendanceRegistration.findMany({
@@ -37,10 +40,11 @@ export async function GET(
 /**
  * PATCH: Admin updates attendee info or changes their primary MAC address
  */
-export async function PATCH(
+async function handlePATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
+  if (!authenticateRequest(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const { id: sessionId } = params;
     const body = await req.json();
@@ -148,3 +152,7 @@ export async function PATCH(
     );
   }
 }
+
+export const GET = withPermission('read', handleGET);
+
+export const PATCH = withPermission('operate', handlePATCH);

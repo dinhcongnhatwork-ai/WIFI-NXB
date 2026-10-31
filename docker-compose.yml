@@ -11,7 +11,7 @@ services:
     environment:
       APP_SERVER_MODE: backend
       PORT: 3001
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      NODE_TLS_REJECT_UNAUTHORIZED: "1"
     command: npm run start:backend
     depends_on:
       - postgres
@@ -31,7 +31,7 @@ services:
       APP_SERVER_MODE: frontend
       PORT: 3000
       BACKEND_URL: http://127.0.0.1:3001
-      NODE_TLS_REJECT_UNAUTHORIZED: "0"
+      NODE_TLS_REJECT_UNAUTHORIZED: "1"
     command: npm run start:frontend
     depends_on:
       - backend

@@ -1,7 +1,9 @@
 'use client';
+import { authenticatedFetch } from '@/lib/api';
 
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
+import AdminMutationLink from '@/components/admin/AdminMutationLink';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/AuthProvider';
 import toast from 'react-hot-toast';
@@ -41,7 +43,7 @@ const STATUS_TABS: Array<{ status: AttendanceSessionStatus | 'ALL'; label: strin
 
 export default function AttendanceSessionsPage() {
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, canOperate } = useAuth();
   const [sessions, setSessions] = useState<AttendanceSessionDto[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeStatus, setActiveStatus] = useState<AttendanceSessionStatus | 'ALL'>('ALL');
@@ -49,13 +51,14 @@ export default function AttendanceSessionsPage() {
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
 
   const fetchSessions = useCallback(async () => {
+    if (!token) return;
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (activeStatus !== 'ALL') params.set('status', activeStatus);
       if (search.trim()) params.set('search', search.trim());
 
-      const res = await fetch(`/api/attendance/sessions?${params}`);
+      const res = await authenticatedFetch(`/api/attendance/sessions?${params}`, { headers: { Authorization: `Bearer ${token}` } });
       const json = await res.json();
       if (json.success) {
         setSessions(json.data);
@@ -67,19 +70,20 @@ export default function AttendanceSessionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [activeStatus, search]);
+  }, [activeStatus, search, token]);
 
   useEffect(() => {
     fetchSessions();
   }, [fetchSessions]);
 
   const handleStartSession = async (id: string, name: string) => {
+    if (!canOperate) return;
     if (!confirm(`Bắt đầu buổi họp "${name}" và kích hoạt chế độ giám sát trực tiếp?`)) return;
     try {
       setActionLoadingId(id);
-      const res = await fetch(`/api/attendance/sessions/${id}`, {
+      const res = await authenticatedFetch(`/api/attendance/sessions/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ status: 'ACTIVE' }),
       });
       const json = await res.json();
@@ -97,12 +101,13 @@ export default function AttendanceSessionsPage() {
   };
 
   const handleEndSession = async (id: string, name: string) => {
+    if (!canOperate) return;
     if (!confirm(`Kết thúc buổi họp "${name}" và chốt số liệu điểm danh? Thao tác này sẽ đóng toàn bộ phiên hiện diện.`)) return;
     try {
       setActionLoadingId(id);
-      const res = await fetch(`/api/attendance/sessions/${id}`, {
+      const res = await authenticatedFetch(`/api/attendance/sessions/${id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ status: 'ENDED' }),
       });
       const json = await res.json();
@@ -120,11 +125,13 @@ export default function AttendanceSessionsPage() {
   };
 
   const handleDeleteSession = async (id: string, name: string) => {
+    if (!canOperate) return;
     if (!confirm(`Xóa buổi họp "${name}"? Hành động này không thể hoàn tác.`)) return;
     try {
       setActionLoadingId(id);
-      const res = await fetch(`/api/attendance/sessions/${id}`, {
+      const res = await authenticatedFetch(`/api/attendance/sessions/${id}`, {
         method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
       });
       const json = await res.json();
       if (json.success) {
@@ -161,7 +168,7 @@ export default function AttendanceSessionsPage() {
         </div>
 
         {/* Create Session Button - Island / Button-in-Button */}
-        <Link
+        <AdminMutationLink
           href="/admin/attendance/new"
           className="group inline-flex items-center justify-between gap-3 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs py-2.5 px-5 shadow-lg shadow-blue-500/25 transition-all duration-300 active:scale-[0.98] self-start md:self-auto"
         >
@@ -169,7 +176,7 @@ export default function AttendanceSessionsPage() {
           <span className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center transition-transform group-hover:rotate-90">
             <Plus className="w-4 h-4" />
           </span>
-        </Link>
+        </AdminMutationLink>
       </div>
 
       {/* Filter & Search Bar */}
@@ -225,13 +232,13 @@ export default function AttendanceSessionsPage() {
               : 'Hãy bắt đầu bằng việc tạo buổi họp mới và chọn SSID phát sóng trên 2 AP tầng 11.'}
           </p>
           <div className="mt-4">
-            <Link
+            <AdminMutationLink
               href="/admin/attendance/new"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold hover:bg-blue-700 shadow-sm"
             >
               <Plus className="w-4 h-4" />
               Tạo buổi họp đầu tiên
-            </Link>
+            </AdminMutationLink>
           </div>
         </div>
       ) : (
@@ -248,7 +255,7 @@ export default function AttendanceSessionsPage() {
                 key={session.id}
                 className={`group rounded-[2rem] p-1.5 transition-all duration-300 ${
                   isActive
-                    ? 'bg-gradient-to-b from-emerald-500/20 to-blue-500/10 ring-1 ring-emerald-500/30 shadow-lg shadow-emerald-500/5'
+                    ? 'bg-blue-600 ring-1 ring-emerald-500/30 shadow-lg shadow-emerald-500/5'
                     : 'bg-slate-100/70 ring-1 ring-slate-200/80 hover:shadow-md hover:ring-slate-300'
                 }`}
               >
@@ -358,6 +365,7 @@ export default function AttendanceSessionsPage() {
                       {(isDraft || (session.stats?.totalRegistered === 0 && !isActive)) && (
                         <button
                           type="button"
+                          disabled={!canOperate}
                           onClick={() => handleDeleteSession(session.id, session.name)}
                           className="p-2 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 transition-colors"
                           title="Xóa buổi họp"
@@ -374,7 +382,7 @@ export default function AttendanceSessionsPage() {
                           <button
                             type="button"
                             onClick={() => handleEndSession(session.id, session.name)}
-                            disabled={actionLoadingId === session.id}
+                            disabled={!canOperate || actionLoadingId === session.id}
                             className="px-3 py-1.5 rounded-xl border border-rose-200 text-rose-700 hover:bg-rose-50 text-xs font-bold transition-colors"
                           >
                             Kết thúc buổi
@@ -400,7 +408,7 @@ export default function AttendanceSessionsPage() {
                         <button
                           type="button"
                           onClick={() => handleStartSession(session.id, session.name)}
-                          disabled={actionLoadingId === session.id}
+                          disabled={!canOperate || actionLoadingId === session.id}
                           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-all"
                         >
                           <Play className="w-3.5 h-3.5" />

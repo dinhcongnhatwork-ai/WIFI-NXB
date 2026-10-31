@@ -6,7 +6,7 @@ A fullstack WiFi marketing system with visual drag-and-drop page builder and cap
 
 ## Runtime Topology
 
-- Public domain (no port): `https://wifi.jtsc.vn`
+- Public domain (no port): `https://solutionai.com.vn`
 - Docker Compose frontend published port: `3000`
 - Internal frontend process: `127.0.0.1:3000`
 - Internal backend process: `127.0.0.1:3001`
@@ -27,19 +27,19 @@ A fullstack WiFi marketing system with visual drag-and-drop page builder and cap
 Use `.env` (already configured in this project):
 
 ```env
-APP_DOMAIN=wifi.jtsc.vn
+APP_DOMAIN=solutionai.com.vn
 FRONTEND_PORT=3000
 BACKEND_PORT=3001
 BACKEND_URL=http://127.0.0.1:3001
 
-NEXT_PUBLIC_APP_URL=https://wifi.jtsc.vn
-NEXT_PUBLIC_API_URL=https://wifi.jtsc.vn
+NEXT_PUBLIC_APP_URL=https://solutionai.com.vn
+NEXT_PUBLIC_API_URL=https://solutionai.com.vn
 ```
 
 To access from outside without `:3000`, you must put a reverse proxy (Nginx/Cloudflare Tunnel/LB) in front:
 
-- `https://wifi.jtsc.vn/*` -> `http://127.0.0.1:3000/*`
-- `https://wifi.jtsc.vn/api/*` -> `http://127.0.0.1:3001/api/*`
+- `https://solutionai.com.vn/*` -> `http://127.0.0.1:3000/*`
+- `https://solutionai.com.vn/api/*` -> `http://127.0.0.1:3001/api/*`
 
 ## Quick Start (Development)
 
@@ -87,9 +87,9 @@ Terminal 2 (frontend on 3000):
 npm run dev:frontend
 ```
 
-Open `http://wifi.jtsc.vn:3000`
+Open `http://127.0.0.1:3000`
 
-If reverse proxy is configured, open `https://wifi.jtsc.vn`.
+If reverse proxy is configured, open `https://solutionai.com.vn`.
 
 ## Build and Run (Production)
 
@@ -227,3 +227,5 @@ npm run build
 npm run start:backend
 npm run start:frontend
 ```
+
+Cấu hình domain đang vận hành và Cloudflare Tunnel: [solutionai.com.vn](docs/solutionai-domain-deployment.md).
