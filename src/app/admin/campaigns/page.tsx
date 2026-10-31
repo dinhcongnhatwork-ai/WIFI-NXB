@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import AdminMutationLink from '@/components/admin/AdminMutationLink';
+import CampaignSessionPolicyDialog from '@/components/campaigns/CampaignSessionPolicyDialog';
+import { positionCampaignMenu } from '@/components/campaigns/menu-position';
 import { useAuth } from '@/components/auth/AuthProvider';
 import { api } from '@/lib/api';
 import toast from 'react-hot-toast';
@@ -20,6 +22,7 @@ import {
   Globe,
   MonitorDot,
   RotateCcw,
+  Clock,
 } from 'lucide-react';
 
 interface Campaign {
@@ -44,10 +47,19 @@ export default function CampaignsPage() {
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  const [menuAnchor, setMenuAnchor] = useState<{ top: number; left: number } | null>(null);
+  const [menuPosition, setMenuPosition] = useState<ReturnType<typeof positionCampaignMenu> | null>(null);
   const [resetTarget, setResetTarget] = useState<Campaign | null>(null);
   const [resetLoading, setResetLoading] = useState(false);
+  const [sessionTarget, setSessionTarget] = useState<Campaign | null>(null);
   const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const resetDialogRef = useRef<HTMLDivElement | null>(null);
+
+  const closeMenu = useCallback((restoreFocus = false) => {
+    setOpenMenuId(null);
+    setMenuPosition(null);
+    if (restoreFocus) menuTriggerRef.current?.focus({ preventScroll: true });
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 400);
@@ -76,21 +88,70 @@ export default function CampaignsPage() {
     fetchCampaigns();
   }, [fetchCampaigns]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!openMenuId) return;
-    const handleClick = (e: MouseEvent) => {
-      if (menuTriggerRef.current && menuTriggerRef.current.contains(e.target as Node)) return;
-      setOpenMenuId(null);
+    const trigger = menuTriggerRef.current;
+    const menu = menuRef.current;
+    if (!trigger || !menu) return;
+    const updatePosition = () => {
+      const rect = trigger.getBoundingClientRect();
+      const visible = window.visualViewport;
+      const viewport = { left: visible?.offsetLeft ?? 0, top: visible?.offsetTop ?? 0, width: visible?.width ?? window.innerWidth, height: visible?.height ?? window.innerHeight };
+      if (!trigger.isConnected || rect.bottom <= viewport.top || rect.top >= viewport.top + viewport.height || rect.right <= viewport.left || rect.left >= viewport.left + viewport.width) {
+        closeMenu();
+        return;
+      }
+      setMenuPosition(positionCampaignMenu(rect, {
+        width: menu.getBoundingClientRect().width,
+        height: menu.scrollHeight + menu.offsetHeight - menu.clientHeight,
+      }, viewport));
     };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [openMenuId]);
+    const handlePointer = (event: PointerEvent) => {
+      if (!trigger.contains(event.target as Node) && !menu.contains(event.target as Node)) closeMenu();
+    };
+    const handleFocus = (event: FocusEvent) => {
+      if (!trigger.contains(event.target as Node) && !menu.contains(event.target as Node)) closeMenu();
+    };
+    updatePosition();
+    const observer = new ResizeObserver(updatePosition);
+    observer.observe(menu);
+    observer.observe(trigger);
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    window.visualViewport?.addEventListener('resize', updatePosition);
+    window.visualViewport?.addEventListener('scroll', updatePosition);
+    document.addEventListener('pointerdown', handlePointer);
+    document.addEventListener('focusin', handleFocus);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+      window.visualViewport?.removeEventListener('resize', updatePosition);
+      window.visualViewport?.removeEventListener('scroll', updatePosition);
+      document.removeEventListener('pointerdown', handlePointer);
+      document.removeEventListener('focusin', handleFocus);
+    };
+  }, [openMenuId, closeMenu]);
+
+  const menuReady = Boolean(openMenuId && menuPosition);
+  useLayoutEffect(() => {
+    if (menuReady) menuRef.current?.querySelector<HTMLElement>('button:not([disabled]),a[href]')?.focus({ preventScroll: true });
+  }, [openMenuId, menuReady]);
+
+  useEffect(() => {
+    if (!resetTarget) return;
+    resetDialogRef.current?.focus({ preventScroll: true });
+    return () => menuTriggerRef.current?.focus({ preventScroll: true });
+  }, [resetTarget]);
 
   const openMenu = (id: string, buttonEl: HTMLButtonElement) => {
-    const rect = buttonEl.getBoundingClientRect();
-    setMenuAnchor({ top: rect.bottom + 4, left: rect.right - 160 });
-    setOpenMenuId(id);
+    if (openMenuId === id) {
+      closeMenu(true);
+      return;
+    }
     menuTriggerRef.current = buttonEl;
+    setMenuPosition(null);
+    setOpenMenuId(id);
   };
 
   const handleDelete = async (id: string) => {
@@ -146,21 +207,13 @@ export default function CampaignsPage() {
     if (!resetTarget) return;
     setResetLoading(true);
     try {
-      const res = await api.post<{ success: boolean; bindingsRemoved?: number }>(
-        '/api/mikrotik/hotspot',
-        { action: 'remove-all-active' },
-        token!
+      const res = await api.post<{ success: boolean; data: { queued: number;revoked:number;waiting:number;skipped:number;failed:number;notQueued:number } }>(
+        `/api/campaigns/${resetTarget.id}/reset-wifi`, {}, token!
       );
-      if (res.success) {
-        const msg = res.bindingsRemoved
-          ? `Đã ngắt kết nối ${res.bindingsRemoved} thiết bị WiFi`
-          : 'Đã ngắt kết nối tất cả thiết bị WiFi';
-        toast.success(msg);
-      } else {
-        toast.error('Reset thất bại');
-      }
+      if(res.success){const d=res.data;const pending=d.waiting+d.skipped+d.failed;const message=`Đã ngắt ${d.revoked} thiết bị. ${d.notQueued?`${d.notQueued} thiết bị chưa được xử lý, cần bấm Reset lại.`:pending?`${pending} phiên đang chờ xử lý; hệ thống sẽ thử lại.`:'Các thiết bị phải xác thực lại khi vào SSID này.'}`;if(d.failed)toast.error(message);else toast.success(message);}
+      else toast.error('Chưa yêu cầu được đăng nhập lại.');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Reset thất bại. Kiểm tra kết nối Mikrotik.';
+      const msg = err instanceof Error ? err.message : 'Không thể yêu cầu đăng nhập lại. Kiểm tra kết nối UniFi.';
       toast.error(msg);
     } finally {
       setResetLoading(false);
@@ -174,17 +227,37 @@ export default function CampaignsPage() {
     return c.active && new Date(c.startTime) <= now && new Date(c.endTime) >= now;
   };
 
-  const menuContent = openMenuId && menuAnchor && typeof document !== 'undefined' ? createPortal(
+  const menuContent = openMenuId && typeof document !== 'undefined' ? createPortal(
     <div
-      style={{ position: 'fixed', top: menuAnchor.top, left: menuAnchor.left, zIndex: 99999 }}
-      className="admin-shell admin-popover w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1 animate-fade-in"
-      onMouseDown={(e) => e.stopPropagation()}
+      ref={menuRef}
+      id="campaign-actions"
+      role="group"
+      aria-label="Thao tác chiến dịch"
+      style={{ position: 'fixed', ...menuPosition, visibility: menuPosition ? 'visible' : 'hidden', zIndex: 99999 }}
+      className="admin-shell admin-popover w-48 overflow-y-auto overscroll-contain bg-white rounded-xl shadow-xl border border-slate-200 py-1"
+      onKeyDown={(event) => {
+        if (event.key === 'Tab') closeMenu(true);
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeMenu(true);
+        }
+        if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+          event.preventDefault();
+          const items = Array.from(event.currentTarget.querySelectorAll<HTMLElement>('button:not([disabled]),a[href]'));
+          const index = items.indexOf(document.activeElement as HTMLElement);
+          const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+          items[next]?.focus();
+        }
+      }}
     >
       {(() => {
         const c = campaigns.find(x => x.id === openMenuId);
         if (!c) return null;
         return (
           <>
+            <button type="button" disabled={!canOperate} onClick={() => { closeMenu(true); setSessionTarget(c); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50">
+              <Clock className="w-4 h-4 text-slate-400" />Thời hạn phiên WiFi
+            </button>
             <Link
               href={`/admin/campaigns/${c.id}`}
               className="flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
@@ -214,7 +287,7 @@ export default function CampaignsPage() {
             {c.template?.status !== 'published' && (
               <button
                 disabled={!canOperate}
-                onMouseDown={() => handlePublishTemplate(c.templateId)}
+                onClick={() => handlePublishTemplate(c.templateId)}
                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-blue-600 hover:bg-blue-50 transition-colors"
               >
                 <Globe className="w-4 h-4" />
@@ -223,7 +296,7 @@ export default function CampaignsPage() {
             )}
             <button
               disabled={!canOperate}
-              onMouseDown={() => handleTogglePortal(c.id, c.portalEnabled)}
+              onClick={() => handleTogglePortal(c.id, c.portalEnabled)}
               className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors ${
                 c.portalEnabled ? 'text-emerald-600' : 'text-slate-600'
               }`}
@@ -234,7 +307,7 @@ export default function CampaignsPage() {
             <div className="my-1 border-t border-slate-100" />
             <button
               disabled={!canAdmin}
-              onMouseDown={() => setResetTarget(c)}
+              onClick={() => { closeMenu(true); setResetTarget(c); }}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-amber-600 hover:bg-amber-50 transition-colors"
             >
               <RotateCcw className="w-4 h-4" />
@@ -243,7 +316,7 @@ export default function CampaignsPage() {
             <div className="my-1 border-t border-slate-100" />
             <button
               disabled={!canOperate}
-              onMouseDown={() => handleToggleActive(c.id, c.active)}
+              onClick={() => handleToggleActive(c.id, c.active)}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
             >
               {c.active ? (
@@ -260,7 +333,7 @@ export default function CampaignsPage() {
             </button>
             <button
               disabled={!canOperate}
-              onMouseDown={() => { setOpenMenuId(null); handleDelete(c.id); }}
+              onClick={() => { closeMenu(true); handleDelete(c.id); }}
               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-colors"
             >
               <Trash2 className="w-4 h-4" />
@@ -397,7 +470,7 @@ export default function CampaignsPage() {
                     <td className="px-3 py-3">
                       <button
                         aria-label={`Thao tác chiến dịch ${c.name}`} aria-expanded={openMenuId === c.id}
-                        ref={openMenuId === c.id ? menuTriggerRef : undefined}
+                        aria-controls={openMenuId === c.id ? 'campaign-actions' : undefined}
                         onClick={(e) => {
                           e.stopPropagation();
                           openMenu(c.id, e.currentTarget);
@@ -416,27 +489,43 @@ export default function CampaignsPage() {
         )}
       </div>
 
-      {resetTarget && (
+      {resetTarget && createPortal(
         <div
-          className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in"
+          className="admin-shell fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          style={{ backgroundColor: 'rgb(0 0 0 / 0.4)' }}
           onClick={() => !resetLoading && setResetTarget(null)}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 p-6 animate-scale-in"
+            ref={resetDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reset-wifi-title"
+            aria-describedby="reset-wifi-description"
+            tabIndex={-1}
+            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-6"
             onClick={(e) => e.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape' && !resetLoading) setResetTarget(null);
+              if (event.key === 'Tab') {
+                const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
+                const first = buttons[0], last = buttons[buttons.length - 1];
+                if (event.shiftKey && (document.activeElement === first || document.activeElement === event.currentTarget)) { event.preventDefault(); last?.focus(); }
+                else if (!event.shiftKey && (document.activeElement === last || document.activeElement === event.currentTarget)) { event.preventDefault(); first?.focus(); }
+              }
+            }}
           >
             <div className="flex items-center gap-3 mb-4">
               <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
                 <RotateCcw className="w-6 h-6 text-amber-600" />
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-slate-900">Reset WiFi</h3>
-                <p className="text-sm text-slate-500">{resetTarget.name}</p>
+              <div className="min-w-0">
+                <h3 id="reset-wifi-title" className="text-lg font-bold text-slate-900">Reset WiFi</h3>
+                <p className="text-sm text-slate-500 break-words">{resetTarget.name}</p>
               </div>
             </div>
-            <p className="text-sm text-slate-600 mb-6 leading-relaxed">
-              Tất cả thiết bị đang kết nối WiFi sẽ bị ngắt và phải xác thực lại qua portal.
-              Hành động này không thể hoàn tác.
+            <p id="reset-wifi-description" className="text-sm text-slate-600 mb-6 leading-relaxed">
+              Thu hồi quyền guest cũ, ngắt thiết bị trong SSID chiến dịch và yêu cầu xác thực lại qua portal. Thiết bị miễn xác thực cũng phải bấm Kết nối lại một lần sau Reset.
+              Các SSID khác không bị ảnh hưởng.
             </p>
             <div className="flex gap-3">
               <button
@@ -462,9 +551,10 @@ export default function CampaignsPage() {
               </button>
             </div>
           </div>
-        </div>
+        </div>, document.body
       )}
 
+      {sessionTarget && token && <CampaignSessionPolicyDialog campaign={sessionTarget} token={token} canAdmin={canAdmin} onClose={() => setSessionTarget(null)} />}
       {menuContent}
     </div>
   );

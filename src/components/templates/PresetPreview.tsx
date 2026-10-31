@@ -7,7 +7,7 @@ import DocumentRenderer from '@/components/renderer/DocumentRenderer';
 import { createPresetDocument, type TemplatePreset } from '@/lib/template-presets';
 import { DEVICES, DEVICE_KEYS, SCREEN_LABELS, type DeviceVariant, type ScreenId } from '@/lib/template-document';
 
-export default function PresetPreview({ preset, onClose, onChoose, creating, canChoose = true }: { preset: TemplatePreset; onClose: () => void; onChoose: () => void; creating: boolean; canChoose?: boolean }) {
+export default function PresetPreview({ preset, onClose, onChoose, creating, canChoose = true, replacing = false }: { preset: TemplatePreset; onClose: () => void; onChoose: () => void; creating: boolean; canChoose?: boolean; replacing?: boolean }) {
   const document = useMemo(() => createPresetDocument(preset.id), [preset.id]);
   const [device, setDevice] = useState<DeviceVariant>('mobile');
   const [screen, setScreen] = useState<ScreenId>('portal');
@@ -48,13 +48,14 @@ export default function PresetPreview({ preset, onClose, onChoose, creating, can
       </div>
       <div className="flex items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
         <p className="text-xs text-slate-500">
-          {preset.id === 'van-hoa-doc' && '✓ Đã kích hoạt sẵn: Thông báo (Announcement) & Slider ảnh tỷ lệ chuẩn theo thiết bị.'}
-          {preset.id === 'xuat-ban-so' && '✓ Đã kích hoạt sẵn: Video Gate (9:16) giới thiệu kho sách số & Slider ảnh đa nền tảng.'}
-          {preset.id === 'hoi-nghi' && '✓ Đã kích hoạt sẵn: Điểm danh đại biểu (Attendance Gate) & Xác nhận cơ quan công tác.'}
-          {preset.id === 'trien-lam' && '✓ Đã kích hoạt sẵn: Thông báo nhận E-Voucher 20% & Không gian triển lãm ngày hội sách.'}
-          {preset.id === 'ly-luan-chinh-tri' && '✓ Kết nối nhanh trực tiếp: Tối ưu tra cứu kho tư liệu Đảng và sách kinh điển.'}
+          {replacing && 'Thay thiết kế cả 3 thiết bị. Bản cũ sẽ được tải xuống JSON; có thể hoàn tác. Cần xuất bản riêng để áp dụng cho chiến dịch.'}
+          {!replacing && preset.id === 'van-hoa-doc' && 'Đã bật thông báo giới thiệu không gian đọc.'}
+          {!replacing && preset.id === 'xuat-ban-so' && 'Đã bật video giới thiệu xuất bản số (9:16).'}
+          {!replacing && preset.id === 'hoi-nghi' && 'Đã bật điểm danh đại biểu và thông tin đơn vị.'}
+          {!replacing && preset.id === 'trien-lam' && 'Đã bật thông báo giới thiệu triển lãm.'}
+          {!replacing && preset.id === 'ly-luan-chinh-tri' && 'Kết nối trực tiếp; có thể bật các màn hình bổ sung.'}
         </p>
-        <button type="button" disabled={!canChoose || creating} onClick={onChoose} className="shrink-0 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50">{creating ? 'Đang tạo...' : `Dùng ${preset.name}`}</button>
+        <button type="button" disabled={!canChoose || creating} onClick={onChoose} className="shrink-0 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 disabled:opacity-50">{creating ? 'Đang tạo...' : replacing ? `Áp dụng ${preset.name}` : `Dùng ${preset.name}`}</button>
       </div>
     </div>
   </div>, window.document.body);

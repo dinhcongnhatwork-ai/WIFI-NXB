@@ -1,4 +1,5 @@
 'use client';
+import { authenticatedFetch } from '@/lib/api';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { TemplateDocumentV2 } from '@/lib/template-document';
 export type SaveState = 'saved'|'dirty'|'saving'|'error'|'conflict';
@@ -16,11 +17,12 @@ export function useDraftSave(id:string, document:TemplateDocumentV2, initialVers
     setState('saving'); setError('');
     const operation=(async()=>{
       try {
-        const res=await fetch(`/api/templates/${id}`,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json',Authorization:`Bearer ${token}`},body:JSON.stringify({layoutJson:JSON.parse(snapshot),expectedVersion:version.current})});
-        const data=await res.json();
-        if(!res.ok) { if(res.status===409) blocked.current=true; throw new Error(data.error||'Không lưu được bản nháp'); }
+        const res=await authenticatedFetch(`/api/templates/${id}`,{method:'PUT',credentials:'include',headers:{'Content-Type':'application/json'},body:JSON.stringify({layoutJson:JSON.parse(snapshot),expectedVersion:version.current})});
+        const data=await res.json().catch(()=>({error:'Máy chủ không trả dữ liệu hợp lệ. Vui lòng thử lưu lại.'}));
+        if(!res.ok) { if(res.status===409) blocked.current=true; throw new Error(res.status===401?'Phiên đăng nhập đã hết hạn. Hãy tải bản nháp dự phòng trước khi đăng nhập lại.':data.error||'Không lưu được bản nháp'); }
+        if(!Number.isInteger(data.data?.draftVersion))throw new Error('Máy chủ chưa xác nhận phiên bản lưu. Vui lòng thử lại.');
         version.current=data.data.draftVersion; saved.current=snapshot;
-        if(JSON.stringify(latest.current)===snapshot) { setState('saved'); localStorage.removeItem(key); } else setState('dirty');
+        if(JSON.stringify(latest.current)===snapshot) { setState('saved'); try{localStorage.removeItem(key);}catch{} } else setState('dirty');
       } catch(e) { setState(blocked.current?'conflict':'error');setError(e instanceof Error?e.message:'Lưu thất bại');throw e; }
     })();
     pending.current=operation;try {await operation;}finally{if(pending.current===operation) pending.current=null;}

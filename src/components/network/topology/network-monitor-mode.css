@@ -1,0 +1,49 @@
+
+/* Presentation mode keeps the sign and topology, with no dashboard chrome. */
+ .network-canvas-panel { --network-sign-height:clamp(80px,11dvh,120px); }
+.network-monitor-banner { position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:6; width:min(calc(var(--network-sign-height) * 3),calc(100% - 32px)); pointer-events:none; background:transparent; border:0; border-radius:0; overflow:hidden; }
+.network-monitor-banner img { display:block; width:100%; height:auto; aspect-ratio:3 / 1; }
+.network-fullscreen-tools { position:absolute; top:12px; right:12px; z-index:10; display:flex; gap:6px; }
+.network-workspace.is-fullscreen { height:100dvh; width:100%; padding:10px; gap:8px; overflow:hidden; box-sizing:border-box; }
+.network-workspace.is-fullscreen > :not(.network-canvas-layout) { display:none !important; }
+.network-workspace.is-fullscreen .network-canvas-layout { flex:1; min-height:0; grid-template-columns:minmax(0,1fr); }
+.network-workspace.is-fullscreen .network-canvas-panel { height:100%; min-height:0; }
+.network-map-surface { position:absolute; inset:calc(var(--network-sign-height) + 32px) 0 0; overflow:hidden; }
+.network-workspace.is-fullscreen .network-fullscreen-tools { top:12px; right:12px; bottom:auto; }
+.network-workspace.is-fullscreen .network-fullscreen-tools .network-tool-button { width:32px; height:32px; min-height:0; padding:0; display:grid; place-items:center; }
+.network-workspace.is-fullscreen .react-flow__controls,
+.network-workspace.is-fullscreen .react-flow__minimap,
+.network-workspace.is-fullscreen .network-map-legend { display:none !important; }
+.network-workspace.is-fullscreen .network-inspector { display:block; position:absolute; inset:calc(clamp(80px,11dvh,120px) + 32px) 12px 12px auto; width:min(380px,calc(100% - 24px)); z-index:30; box-shadow:-6px 0 24px #0f172a14; }
+.network-workspace.is-fullscreen .network-inspector > aside { width:100%; height:100%; max-height:100%; }
+@media(max-width:767px) { .network-fullscreen-tools span { display:none; }.network-workspace.is-fullscreen { padding:6px; gap:6px; }.network-workspace.is-fullscreen .network-canvas-panel { --network-sign-height:80px; } }
+
+/* Compact monitor cards; these sizes are shared with node-dimensions.ts. */
+.network-workspace .network-device-card { width:260px; height:148px; padding:10px 12px 8px; border-radius:9px; }
+.network-workspace .network-device-heading { height:48px; gap:9px; }
+.network-workspace .network-device-art { width:48px; height:48px; }
+.network-workspace .network-device-heading h3 { font-size:14px; line-height:19px; }
+.network-workspace .network-device-address { font-size:10px; margin-top:2px; }
+.network-workspace .network-device-meta { margin-top:5px; font-size:10px; }
+.network-workspace .network-device-traffic { margin-top:5px; padding-top:5px; column-gap:10px; }
+.network-workspace .network-device-traffic strong { font-size:11px; line-height:17px; }
+.network-workspace .network-device-card:has(.network-branch-button) .network-device-traffic { margin-top:4px; padding-top:4px; }
+.network-workspace .network-branch-button { height:23px; padding:0 10px; font-size:9px; }
+.network-workspace .network-port-summary { padding-top:8px; margin-top:8px; font-size:10px; }
+.network-workspace .network-device-card.is-client { width:176px; height:132px; padding:9px 10px; }
+.network-workspace .is-client .network-device-heading { height:48px; gap:7px; }
+.network-workspace .is-client .network-device-art { width:36px; height:36px; }
+.network-workspace .is-client .network-device-heading h3 { font-size:12px; line-height:16px; }
+.network-workspace .is-client .network-device-type { font-size:8px; }
+.network-workspace .is-client .network-device-address { font-size:9px; }
+.network-workspace .is-client .network-device-meta { font-size:9px; margin-top:4px; }
+.network-workspace .is-client .network-device-traffic { column-gap:6px; margin-top:6px; padding-top:6px; }
+.network-workspace .is-client .network-device-traffic>div>span { font-size:8px; }
+.network-workspace .is-client .network-device-traffic strong { font-size:10px; line-height:16px; }
+/* Handles are visual endpoints; branch buttons receive the click even when zoomed out. */
+.network-workspace .network-device-card .react-flow__handle { pointer-events:none; }
+/* Align DOM handle centers with the fixed geometry (including the 1px card border). */
+.network-workspace .network-device-card .react-flow__handle-top { top:-1px; }
+.network-workspace .network-device-card .react-flow__handle-bottom { bottom:-1px; }
+.network-workspace .network-device-card .react-flow__handle-left { left:-1px; }
+.network-workspace .network-device-card .react-flow__handle-right { right:-1px; }

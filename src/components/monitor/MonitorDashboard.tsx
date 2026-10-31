@@ -10,22 +10,19 @@ import {
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import {
   Activity,
+  Expand,
+  Minimize2,
   AlertTriangle,
   RefreshCw,
-  Server,
   Database,
   Download,
   Wifi,
   Cpu,
-  HardDrive,
   ShieldAlert,
-  ArrowUpDown,
   Filter,
   CheckCircle2,
   XCircle,
   Radio,
-  Sliders,
-  ExternalLink,
   ChevronRight,
   Search,
 } from "lucide-react";
@@ -35,6 +32,10 @@ import {
   IncidentChart,
   AvailabilityChart,
 } from "./MonitorCharts";
+import { useFullscreen } from "@/components/network/topology/useFullscreen";
+import "./monitoring.css";
+import { eventDataState } from "./presentation-state";
+import { trafficSeries } from "./chart-format";
 import { DeviceIcon } from "@/components/network/DeviceIcon";
 import { useAuth } from "@/components/auth/AuthProvider";
 
@@ -77,17 +78,17 @@ function Quality({ value }: { value: string }) {
     >
       <span
         className={`h-1.5 w-1.5 rounded-full ${
-          isOk ? "bg-emerald-500 animate-pulse" : isErr ? "bg-rose-500" : "bg-amber-500"
+          isOk ? "bg-emerald-500" : isErr ? "bg-rose-500" : "bg-amber-500"
         }`}
       />
       {(
         {
-          fresh: "Thời gian thực",
+          fresh: "Mẫu mới",
           online: "Trực tuyến",
           offline: "Ngoại tuyến",
           connected: "Đã kết nối",
           failed: "Lỗi kết nối",
-          stale: "Đang cập nhật",
+          stale: "Dữ liệu cũ",
           missing: "Thiếu dữ liệu",
           unavailable: "Tạm gián đoạn",
           "source-unavailable": "Nguồn gián đoạn",
@@ -180,6 +181,8 @@ function localDateInput(value: string | null) {
 }
 
 export default function MonitorDashboard() {
+  const dashboardRef = useRef<HTMLDivElement>(null);
+  const fullscreen = useFullscreen(dashboardRef);
   const auth = useAuth(),
     params = useSearchParams(),
     router = useRouter(),
@@ -268,6 +271,7 @@ export default function MonitorDashboard() {
       q.delete("from");
       q.delete("to");
     }
+    if (key === "connectionId" || key === "siteId") q.delete("deviceId");
     if (value) q.set(key, value);
     else q.delete(key);
     router.replace(`${pathname}?${q.toString()}`, { scroll: false });
@@ -327,7 +331,7 @@ export default function MonitorDashboard() {
   const targets: Target[] = overview?.targets || [];
   const allTargetsList: Target[] = overview?.allTargets || overview?.targets || [];
   const connections: Connection[] = overview?.connections || [];
-  const sitesList: string[] = overview?.sites || ["m5npy6bn"];
+  const sitesList: string[] = overview?.sites || [];
 
   const selectedConnectionId = params.get("connectionId") || "";
   const selectedSiteId = params.get("siteId") || "";
@@ -518,6 +522,7 @@ export default function MonitorDashboard() {
   const inspectedTarget = allTargetsList.find((t) => t.id === inspectedTargetId);
   const slaSource = metric(chosen, "available").data?.sla30d;
   const sla = slaSource?.data?.availability;
+  const eventState = eventDataState(events);
   const currentEvents = allEvents.filter(
     (e) => !e.r_eventid || e.r_eventid === "0",
   );
@@ -568,10 +573,10 @@ export default function MonitorDashboard() {
   // Live telemetry counts
   const statusCounts = {
     online: targets.filter(
-      (t) => t.status === "online" || t.quality === "fresh",
+      (t) => t.status === "online",
     ).length,
     offline: targets.filter(
-      (t) => t.status === "offline" && t.quality !== "fresh",
+      (t) => t.status === "offline",
     ).length,
     total: targets.length,
     apCount: targets.filter((t) => t.kind === "ap").length,
@@ -590,7 +595,7 @@ export default function MonitorDashboard() {
       if (deviceKindFilter === "switch" && t.kind !== "switch") return false;
       if (deviceKindFilter === "service" && !["service", "process", "host"].includes(t.kind))
         return false;
-      if (deviceKindFilter === "offline" && t.status === "online") return false;
+      if (deviceKindFilter === "offline" && t.status !== "offline") return false;
       if (deviceSearchText) {
         const text = deviceSearchText.toLowerCase();
         const matchName = t.name.toLowerCase().includes(text);
@@ -603,28 +608,31 @@ export default function MonitorDashboard() {
     });
   }, [targets, deviceKindFilter, deviceSearchText]);
 
-  const mikrotikConn = connections.find((c) => c.provider === "mikrotik");
-  const unifiConn = connections.find((c) => c.provider === "unifi");
+
 
   return (
-    <div className="space-y-6 pb-12 text-slate-800">
+    <div ref={dashboardRef} className={`monitoring-dashboard ${fullscreen.active ? "is-fullscreen" : ""} space-y-4 pb-8 text-slate-800`}>
       {/* HEADER */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200/80 pb-5">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-blue-600">
             <Activity size={15} /> VẬN HÀNH HẠ TẦNG
           </div>
-          <h1 className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900">
             Giám sát Hệ thống & Bất thường
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            Theo dõi thời gian thực Router MikroTik CCR2004, UniFi Controller, tài nguyên máy chủ và phân tích bất thường
+            Theo dõi thiết bị, lưu lượng mạng, tài nguyên và lịch sử sự cố theo phạm vi đã chọn
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-2xs">
-            <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
-            Live Telemetry 30s
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => void fullscreen.toggle()} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50" aria-label={fullscreen.active ? "Thoát toàn màn hình" : "Toàn màn hình"}>
+            {fullscreen.active ? <Minimize2 size={16} /> : <Expand size={16} />}
+            {fullscreen.active ? "Thoát toàn màn hình" : "Toàn màn hình"}
+          </button>
+          <div className="hidden sm:flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600">
+            <span className="h-2 w-2 rounded-full bg-emerald-500" />
+            Chu kỳ cập nhật 30 giây
           </div>
           <button
             onClick={() => setRefresh((v) => v + 1)}
@@ -641,31 +649,31 @@ export default function MonitorDashboard() {
       {error && (
         <div
           role="alert"
-          className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-900 shadow-2xs"
+          className="flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50/80 p-4 text-sm text-rose-900"
         >
           <XCircle size={18} className="text-rose-600 shrink-0" />
           <div className="flex-1">
-            <span className="font-semibold">{error}</span>. Dữ liệu bộ nhớ đệm gần nhất đang được duy trì.
+            <span className="font-semibold">{error}</span>. {overview ? "Dữ liệu bộ nhớ đệm gần nhất đang được duy trì." : "Chưa có dữ liệu giám sát để hiển thị."}
           </div>
         </div>
       )}
 
       {/* SYSTEM TELEMETRY RESILIENCE STATUS BANNER */}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs ring-1 ring-slate-900/5">
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 ring-1 ring-emerald-500/20">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600 ring-1 ring-blue-500/20">
               <Activity size={20} />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-sm font-semibold text-slate-900">
-                  Bộ Thu Thập Telemetry MikroTik & UniFi
+                  Nguồn dữ liệu giám sát
                 </span>
-                <Quality value={overview?.collector?.quality || "online"} />
+                <Quality value={overview?.collector?.quality || "unknown"} />
               </div>
               <p className="text-xs text-slate-500">
-                {statusCounts.online}/{statusCounts.total || 38} thiết bị đang truyền số liệu ổn định
+                {statusCounts.online}/{statusCounts.total} đối tượng có trạng thái trực tuyến
                 {overview?.collector?.at
                   ? ` · Cập nhật lúc ${new Date(overview.collector.at).toLocaleTimeString("vi-VN", { timeZone: "Asia/Bangkok" })}`
                   : ""}
@@ -674,35 +682,14 @@ export default function MonitorDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3 text-xs">
-            {/* MikroTik status badge */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-1.5 text-slate-700">
-              <span className="font-semibold text-slate-900">MikroTik:</span>
-              <span>{mikrotikConn ? mikrotikConn.name || "CCR2004" : "192.168.1.200"}</span>
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            </div>
+            {connections.map((connection) => (
+              <div key={connection.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                <span className="font-medium text-slate-700">{connection.name}</span>
+                <Quality value={connection.status || "unknown"} />
+              </div>
+            ))}
+            {!connections.length && <span>Chưa có kết nối trong phạm vi này</span>}
 
-            {/* UniFi status badge */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-1.5 text-slate-700">
-              <span className="font-semibold text-slate-900">UniFi:</span>
-              <span>Site NXB CTQG ST</span>
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            </div>
-
-            {/* Redis Time-Series status badge */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-1.5 text-slate-700">
-              <span className="font-semibold text-slate-900">Redis TS:</span>
-              <span className="text-emerald-700 font-medium">Hoạt động</span>
-            </div>
-
-            {/* Zabbix mode note */}
-            <div className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50/80 px-2.5 py-1.5 text-slate-500">
-              <span>Zabbix:</span>
-              <span>
-                {overview?.zabbix?.configured && !overview?.zabbix?.error
-                  ? "Đã kết nối"
-                  : "Chế độ Telemetry trực tiếp"}
-              </span>
-            </div>
           </div>
         </div>
       </div>
@@ -714,7 +701,7 @@ export default function MonitorDashboard() {
       >
         {[
           { key: "overview", label: "Tổng quan", icon: Activity },
-          { key: "devices", label: "Thiết bị", icon: Wifi, badge: statusCounts.total || 38 },
+          { key: "devices", label: "Thiết bị", icon: Wifi, badge: statusCounts.total },
           { key: "resources", label: "Tài nguyên", icon: Cpu },
           { key: "alerts", label: "Cảnh báo & Bất thường", icon: AlertTriangle, badge: currentEvents.length || undefined, alert: currentEvents.length > 0 },
           { key: "logs", label: "Nhật ký vận hành", icon: Database },
@@ -753,7 +740,7 @@ export default function MonitorDashboard() {
       </nav>
 
       {/* FILTER BAR - FULL API LINKED DROPDOWNS */}
-      <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs ring-1 ring-slate-900/5">
+      <div className="rounded-xl border border-slate-200 bg-white p-4">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 items-end">
           {/* Time range selector */}
           <div>
@@ -772,7 +759,7 @@ export default function MonitorDashboard() {
                   update("time", e.target.value);
                 }
               }}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-sm text-slate-800 shadow-2xs focus:border-blue-500 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-100"
             >
               <option value="1h">1 giờ qua</option>
               <option value="6h">6 giờ qua</option>
@@ -793,18 +780,13 @@ export default function MonitorDashboard() {
               value={selectedConnectionId}
               onChange={(e) => {
                 update("connectionId", e.target.value);
-                update("deviceId", "");
               }}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-sm text-slate-800 shadow-2xs focus:border-blue-500 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-100"
             >
-              <option value="">Tất cả Router & Kết nối ({connections.length || 2})</option>
+              <option value="">Tất cả Router & Kết nối ({connections.length})</option>
               {connections.map((c) => (
                 <option key={c.id} value={c.id}>
-                  {c.provider === "mikrotik"
-                    ? `MikroTik CCR2004 (${c.baseUrl || "192.168.1.200"})`
-                    : c.provider === "unifi"
-                      ? `UniFi Controller (${c.name || "viettuans"})`
-                      : `${c.provider.toUpperCase()} (${c.baseUrl})`}
+                  {c.name || c.provider}{c.baseUrl ? ` (${c.baseUrl})` : ""}
                 </option>
               ))}
             </select>
@@ -820,16 +802,13 @@ export default function MonitorDashboard() {
               value={selectedSiteId}
               onChange={(e) => {
                 update("siteId", e.target.value);
-                update("deviceId", "");
               }}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-sm text-slate-800 shadow-2xs focus:border-blue-500 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-100"
             >
               <option value="">Tất cả Site</option>
               {sitesList.map((site) => (
                 <option key={site} value={site}>
-                  {site === "m5npy6bn"
-                    ? "Site: NXB CTQG ST (m5npy6bn)"
-                    : `Site: ${site}`}
+                  Site: {site}
                 </option>
               ))}
             </select>
@@ -844,12 +823,12 @@ export default function MonitorDashboard() {
               aria-label="Lọc thiết bị"
               value={selectedDeviceId}
               onChange={(e) => update("deviceId", e.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-sm text-slate-800 shadow-2xs focus:border-blue-500 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+              className="w-full rounded-xl border border-slate-300 bg-slate-50/50 px-3 py-2 text-sm text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-blue-100"
             >
               <option value="">Tất cả thiết bị ({availableDevices.length})</option>
               {availableDevices.map((d) => (
                 <option key={d.id} value={d.deviceId || d.id}>
-                  [{d.kind.toUpperCase()}] {d.name} {d.metadata?.ip ? `(${d.metadata.ip})` : ""} - {d.status === "online" ? "🟢" : "🔴"}
+                  [{d.kind.toUpperCase()}] {d.name} {d.metadata?.ip ? `(${d.metadata.ip})` : ""} - {d.status === "online" ? "Trực tuyến" : d.status === "offline" ? "Ngoại tuyến" : "Chưa rõ"}
                 </option>
               ))}
             </select>
@@ -929,28 +908,28 @@ export default function MonitorDashboard() {
           {/* 4 HIGH-END KPI CARDS */}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             {/* Card 1: SLA Availability */}
-            <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xs ring-1 ring-slate-900/5">
+            <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Khả dụng SLA 30 ngày
                 </span>
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
                   <CheckCircle2 size={16} />
                 </span>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="text-3xl font-extrabold tracking-tight text-slate-900 font-mono">
-                  {sla?.percent != null ? `${sla.percent.toFixed(2)}%` : "99.98%"}
+                  {sla?.percent != null ? `${sla.percent.toFixed(2)}%` : "—"}
                 </span>
-                <span className="text-xs font-medium text-emerald-600">Ổn định cao</span>
+                <span className="text-xs text-slate-500">{sla?.percent != null ? "Theo mẫu khả dụng" : "Chưa có dữ liệu"}</span>
               </div>
               <p className="mt-2 text-xs text-slate-500 truncate">
-                {selectedTarget?.name || "Hạ tầng MikroTik CCR2004 & UniFi"} · {statusCounts.online} nút trực tuyến
+                {selectedTarget?.name || "Chưa chọn đối tượng"} · {statusCounts.online} nút trực tuyến
               </p>
             </div>
 
             {/* Card 2: Online Devices */}
-            <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xs ring-1 ring-slate-900/5">
+            <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Thiết bị trực tuyến
@@ -964,35 +943,33 @@ export default function MonitorDashboard() {
                   {statusCounts.online}
                 </span>
                 <span className="text-sm font-medium text-slate-500 font-mono">
-                  / {statusCounts.total || 38} Nút
+                  / {statusCounts.total} Nút
                 </span>
                 <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  100% Online
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  {statusCounts.total ? `${Math.round(statusCounts.online / statusCounts.total * 100)}% trực tuyến` : "Chưa có đối tượng"}
                 </span>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                1 Router MikroTik Core · {statusCounts.apCount || 37} UniFi APs
+                {statusCounts.routerCount} router · {statusCounts.apCount} điểm truy cập
               </p>
             </div>
 
             {/* Card 3: WiFi Clients */}
-            <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xs ring-1 ring-slate-900/5">
+            <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Khách WiFi kết nối
                 </span>
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
                   <Radio size={16} />
                 </span>
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="text-3xl font-extrabold tracking-tight text-slate-900 font-mono">
-                  {statusCounts.totalClients > 0
-                    ? statusCounts.totalClients
-                    : selectedTarget?.metadata?.metrics?.["clients.count"] || 12}
+                  {targets.some((t) => typeof t.metadata?.metrics?.["clients.count"] === "number") ? statusCounts.totalClients : "—"}
                 </span>
-                <span className="text-xs font-medium text-indigo-600">Khách đang truy cập</span>
+                <span className="text-xs font-medium text-blue-600">Khách đang truy cập</span>
               </div>
               <p className="mt-2 text-xs text-slate-500 truncate">
                 Đồng bộ từ Hotspot MikroTik & UniFi Clients
@@ -1000,14 +977,16 @@ export default function MonitorDashboard() {
             </div>
 
             {/* Card 4: Anomalies & Alerts */}
-            <div className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xs ring-1 ring-slate-900/5">
+            <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-white p-6">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
                   Bất thường & Cảnh báo
                 </span>
                 <span
                   className={`flex h-7 w-7 items-center justify-center rounded-lg ${
-                    currentEvents.length > 0
+                    !eventState.available
+                      ? "bg-slate-100 text-slate-500"
+                      : currentEvents.length > 0
                       ? "bg-amber-50 text-amber-600"
                       : "bg-emerald-50 text-emerald-600"
                   }`}
@@ -1017,25 +996,27 @@ export default function MonitorDashboard() {
               </div>
               <div className="mt-3 flex items-baseline gap-2">
                 <span className="text-3xl font-extrabold tracking-tight text-slate-900 font-mono">
-                  {currentEvents.length}
+                  {eventState.available ? currentEvents.length : "—"}
                 </span>
                 <span
                   className={`text-xs font-semibold ${
-                    currentEvents.length > 0 ? "text-amber-600" : "text-emerald-600"
+                    !eventState.available ? "text-slate-500" : currentEvents.length > 0 ? "text-amber-600" : "text-emerald-600"
                   }`}
                 >
-                  {currentEvents.length > 0 ? "Cần lưu ý" : "Bình thường"}
+                  {!eventState.available ? eventState.label : currentEvents.length > 0 ? "Cần lưu ý" : "Không có sự cố được trả về"}
                 </span>
               </div>
               <p className="mt-2 text-xs text-slate-500">
-                {currentEvents.filter((e) => Number(e.severity) >= 4).length} mức cao · Bộ phát hiện bất thường tự động
+                {eventState.available ? `${currentEvents.filter((e) => Number(e.severity) >= 4).length} mức cao · Sự cố trong phạm vi đã chọn` : "Trạng thái sự cố chưa xác định"}
               </p>
             </div>
           </div>
 
           {/* ANOMALY STATUS BAR */}
-          {currentEvents.length > 0 ? (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5 shadow-2xs">
+          {!eventState.available ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600" role="status">{eventState.label}. Trạng thái sự cố chưa xác định.</div>
+          ) : currentEvents.length > 0 ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="text-amber-600" size={18} />
@@ -1070,15 +1051,15 @@ export default function MonitorDashboard() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-between rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 text-xs shadow-2xs">
+            <div className="flex items-center justify-between rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-4 text-xs">
               <div className="flex items-center gap-2 text-emerald-900 font-medium">
                 <CheckCircle2 size={16} className="text-emerald-600" />
                 <span>
-                  Hệ thống vận hành an toàn: Tất cả 38 thiết bị MikroTik CCR2004 & UniFi AP hoạt động bình thường, không ghi nhận quá tải.
+                  {events?.data ? "Không có sự cố đang mở trong dữ liệu được trả về." : "Chưa có dữ liệu sự cố. Đang chờ phản hồi từ nguồn giám sát."}
                 </span>
               </div>
               <span className="text-emerald-700 font-semibold font-mono">
-                Anomaly Score: 0.0 (Tối ưu)
+                {events?.quality === "stale" ? "Dữ liệu cũ" : "Theo bộ lọc hiện tại"}
               </span>
             </div>
           )}
@@ -1090,7 +1071,7 @@ export default function MonitorDashboard() {
                 Lịch sử Tài nguyên & Lưu lượng Mạng
               </h2>
               <p className="text-xs text-slate-500">
-                Biểu đồ thời gian thực trực tiếp từ MikroTik CCR2004 & UniFi AP
+                Lịch sử theo đối tượng đã chọn; RX là nhận và TX là gửi tại giao diện thiết bị
               </p>
             </div>
             <div className="flex min-w-0 items-center gap-2">
@@ -1102,7 +1083,7 @@ export default function MonitorDashboard() {
                   setSelected(e.target.value);
                   setCharts({});
                 }}
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-2xs focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
+                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 focus:border-blue-500 focus:outline-hidden focus:ring-2 focus:ring-blue-100"
               >
                 <option value="" disabled>
                   Chọn thiết bị để vẽ biểu đồ
@@ -1132,25 +1113,9 @@ export default function MonitorDashboard() {
               title="Lưu lượng mạng RX / TX · Băng thông thiết bị"
               unit="bit/s"
               area
-              series={["rx.bytes_sec", "tx.bytes_sec"].map((key, i) => {
-                const s = metric(
-                  chosen,
-                  key,
-                  i === 0 ? "RX · Nhận vào (Download)" : "TX · Gửi đi (Upload)",
-                );
-                return {
-                  ...s,
-                  data: s.data
-                    ? {
-                        ...s.data,
-                        points: s.data.points.map((p: any) => ({
-                          ...p,
-                          value: p.value === null ? null : p.value * 8,
-                        })),
-                      }
-                    : undefined,
-                };
-              })}
+              series={["rx.bytes_sec", "tx.bytes_sec"].map((key) =>
+                trafficSeries(metric(chosen, key)),
+              )}
             />
             <TimeChart
               title="Số khách WiFi kết nối"
@@ -1193,7 +1158,7 @@ export default function MonitorDashboard() {
               (key, i) => (
                 <section
                   key={key}
-                  className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs ring-1 ring-slate-900/5"
+                  className="rounded-xl border border-slate-200 bg-white p-5"
                 >
                   <h3 className="text-sm font-bold text-slate-900">
                     {
@@ -1254,7 +1219,7 @@ export default function MonitorDashboard() {
         <div className="space-y-6">
           {/* FLEET COUNTERS */}
           <div className="grid gap-4 sm:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs ring-1 ring-slate-900/5">
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Tổng Thiết Bị
               </span>
@@ -1263,37 +1228,37 @@ export default function MonitorDashboard() {
               </div>
               <p className="mt-1 text-xs text-slate-500">Toàn bộ hạ tầng mạng</p>
             </div>
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs ring-1 ring-slate-900/5">
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Router MikroTik Core
               </span>
-              <div className="mt-2 text-2xl font-bold font-mono text-purple-600">
-                {targets.filter((t) => ["router", "gateway"].includes(t.kind)).length || 1}
+              <div className="mt-2 text-2xl font-bold font-mono text-blue-600">
+                {targets.filter((t) => ["router", "gateway"].includes(t.kind)).length}
               </div>
-              <p className="mt-1 text-xs text-slate-500">CCR2004-16G-2S+ (192.168.1.200)</p>
+              <p className="mt-1 text-xs text-slate-500">Router / gateway trong phạm vi</p>
             </div>
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs ring-1 ring-slate-900/5">
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Access Point UniFi
               </span>
               <div className="mt-2 text-2xl font-bold font-mono text-blue-600">
-                {targets.filter((t) => t.kind === "ap").length || 37}
+                {targets.filter((t) => t.kind === "ap").length}
               </div>
-              <p className="mt-1 text-xs text-slate-500">Site NXB CTQG ST</p>
+              <p className="mt-1 text-xs text-slate-500">Điểm truy cập trong phạm vi</p>
             </div>
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs ring-1 ring-slate-900/5">
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
               <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                 Đang Hoạt Động
               </span>
               <div className="mt-2 text-2xl font-bold font-mono text-emerald-600">
                 {statusCounts.online}
               </div>
-              <p className="mt-1 text-xs text-slate-500">Khả dụng 100%</p>
+              <p className="mt-1 text-xs text-slate-500">Trạng thái do nguồn cung cấp</p>
             </div>
           </div>
 
           {/* FILTER CONTROLS FOR DEVICES */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-2xs ring-1 ring-slate-900/5">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white p-4">
             <div className="flex flex-wrap items-center gap-1.5">
               {[
                 { id: "all", label: `Tất cả (${targets.length})` },
@@ -1323,16 +1288,17 @@ export default function MonitorDashboard() {
               />
               <input
                 type="text"
+                aria-label="Tìm thiết bị"
                 placeholder="Tìm tên, IP, MAC hoặc model..."
                 value={deviceSearchText}
                 onChange={(e) => setDeviceSearchText(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-9 pr-3 py-1.5 text-xs text-slate-800 shadow-2xs focus:border-blue-500 focus:bg-white focus:outline-hidden"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 pl-9 pr-3 py-1.5 text-xs text-slate-800 focus:border-blue-500 focus:bg-white focus:outline-hidden"
               />
             </div>
           </div>
 
           {/* DEVICE GRID */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 md:grid-cols-2 2xl:grid-cols-3">
             {filteredDevicesTab.map((t) => {
               const cpu = t.metadata?.metrics?.["cpu.percent"];
               const mem = t.metadata?.metrics?.["memory.percent"];
@@ -1345,7 +1311,10 @@ export default function MonitorDashboard() {
                     setSelected(t.id);
                     setInspectedTargetId(t.id);
                   }}
-                  className={`group cursor-pointer rounded-2xl border p-5 shadow-2xs transition-all hover:shadow-md ring-1 ring-slate-900/5 ${
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setSelected(t.id); setInspectedTargetId(t.id); } }}
+                  className={`group cursor-pointer rounded-2xl border p-5 transition-all hover:shadow-md ring-1 ring-slate-900/5 ${
                     chosen === t.id
                       ? "border-blue-500 bg-blue-50/20"
                       : "border-slate-200/80 bg-white hover:border-slate-300"
@@ -1353,11 +1322,11 @@ export default function MonitorDashboard() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-3">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
-                        <DeviceIcon device={t} size={28} />
+                      <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 ring-1 ring-slate-200">
+                        <DeviceIcon device={t} size={52} />
                       </div>
                       <div>
-                        <h4 className="font-semibold text-slate-900 text-sm group-hover:text-blue-600 transition-colors">
+                        <h4 className="font-semibold text-slate-900 text-base group-hover:text-blue-600 transition-colors">
                           {t.name}
                         </h4>
                         <span className="inline-block font-mono text-[11px] text-slate-500">
@@ -1391,7 +1360,7 @@ export default function MonitorDashboard() {
                         {typeof mem === "number" && (
                           <div className="h-1.5 w-16 rounded-full bg-slate-100 overflow-hidden">
                             <div
-                              className="h-full rounded-full bg-indigo-600"
+                              className="h-full rounded-full bg-blue-600"
                               style={{ width: `${Math.min(100, mem)}%` }}
                             />
                           </div>
@@ -1411,13 +1380,13 @@ export default function MonitorDashboard() {
                       <p className="mt-0.5 font-mono font-medium text-slate-800">
                         {typeof uptime === "number"
                           ? `${Math.floor(uptime / 3600)} giờ`
-                          : "72+ giờ"}
+                          : "—"}
                       </p>
                     </div>
                   </div>
 
                   <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-400">
-                    <span>Nguồn: {t.metadata?.provider || t.metadata?.source || "Collector"}</span>
+                    <span>Nguồn: {t.metadata?.provider || t.metadata?.source || "Chưa rõ"}</span>
                     <span className="text-blue-600 font-medium group-hover:underline flex items-center gap-0.5">
                       Xem chi tiết <ChevronRight size={12} />
                     </span>
@@ -1426,6 +1395,8 @@ export default function MonitorDashboard() {
               );
             })}
           </div>
+
+          {!filteredDevicesTab.length && <p className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Không có thiết bị phù hợp với bộ lọc hiện tại.</p>}
 
           {/* INSPECTION DRAWER/MODAL IF SELECTED */}
           {inspectedTarget && (
@@ -1442,75 +1413,17 @@ export default function MonitorDashboard() {
       {/* ========================================================================= */}
       {tab === "resources" && (
         <div className="space-y-6">
-          {/* RESOURCE HEADER GAUGES */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs ring-1 ring-slate-900/5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500 uppercase">
-                  Tải CPU Router CCR2004
-                </span>
-                <Cpu size={16} className="text-purple-600" />
-              </div>
-              <div className="mt-2 text-3xl font-extrabold font-mono text-slate-900">
-                {selectedTarget?.metadata?.metrics?.["cpu.percent"] != null
-                  ? `${selectedTarget.metadata.metrics["cpu.percent"].toFixed(1)}%`
-                  : "3.5%"}
-              </div>
-              <div className="mt-2 h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                <div className="h-full bg-purple-600 rounded-full" style={{ width: "3.5%" }} />
-              </div>
-              <p className="mt-2 text-xs text-slate-400">16 Cores ARM64 · Dưới 5% tải</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs ring-1 ring-slate-900/5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500 uppercase">
-                  RAM Cấp Phát Router
-                </span>
-                <Server size={16} className="text-blue-600" />
-              </div>
-              <div className="mt-2 text-3xl font-extrabold font-mono text-slate-900">
-                {selectedTarget?.metadata?.metrics?.["memory.percent"] != null
-                  ? `${selectedTarget.metadata.metrics["memory.percent"].toFixed(1)}%`
-                  : "18.2%"}
-              </div>
-              <div className="mt-2 h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                <div className="h-full bg-blue-600 rounded-full" style={{ width: "18.2%" }} />
-              </div>
-              <p className="mt-2 text-xs text-slate-400">Dung lượng trống dồi dào (4GB RAM)</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs ring-1 ring-slate-900/5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500 uppercase">
-                  Ổ Đĩa / NAND Flash
-                </span>
-                <HardDrive size={16} className="text-emerald-600" />
-              </div>
-              <div className="mt-2 text-3xl font-extrabold font-mono text-slate-900">
-                12.4%
-              </div>
-              <div className="mt-2 h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-                <div className="h-full bg-emerald-600 rounded-full" style={{ width: "12.4%" }} />
-              </div>
-              <p className="mt-2 text-xs text-slate-400">Trạng thái ghi tốt · Không lỗi sector</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-2xs ring-1 ring-slate-900/5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-500 uppercase">
-                  Dịch vụ Điểm danh & Worker
-                </span>
-                <Activity size={16} className="text-indigo-600" />
-              </div>
-              <div className="mt-2 text-3xl font-extrabold font-mono text-slate-900">
-                Sẵn sàng
-              </div>
-              <div className="mt-2">
-                <Quality value={overview?.worker?.quality || "online"} />
-              </div>
-              <p className="mt-2 text-xs text-slate-400">Chu kỳ quét 3 giây đồng bộ</p>
-            </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {[["cpu.percent", "Tải CPU"], ["memory.percent", "Bộ nhớ RAM"], ["disk.percent", "Ổ đĩa"]].map(([key, label]) => {
+              const value = selectedTarget?.metadata?.metrics?.[key];
+              return (
+                <section key={key} className="rounded-xl border border-slate-200 bg-white p-5">
+                  <p className="text-sm font-medium text-slate-600">{label}</p>
+                  <p className="mt-3 text-3xl font-semibold tabular-nums text-slate-900">{typeof value === "number" ? `${value.toFixed(1)}%` : "—"}</p>
+                  <p className="mt-2 text-xs text-slate-500">{selectedTarget?.name || "Chưa chọn đối tượng"}{typeof value !== "number" ? " · Chưa có mẫu" : ""}</p>
+                </section>
+              );
+            })}
           </div>
 
           {/* RESOURCE CHARTS */}
@@ -1534,44 +1447,24 @@ export default function MonitorDashboard() {
               title="Lưu lượng mạng RX/TX (Bit/s)"
               unit="bit/s"
               area
-              series={["rx.bytes_sec", "tx.bytes_sec"].map((key, i) =>
-                metric(
-                  chosen,
-                  key,
-                  i === 0 ? "RX (Tải về)" : "TX (Tải lên)",
-                ),
+              series={["rx.bytes_sec", "tx.bytes_sec"].map((key) =>
+                trafficSeries(metric(chosen, key)),
               )}
             />
           </div>
 
-          {/* CORE APPLICATION HEALTH MATRIX */}
-          <div className="rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xs ring-1 ring-slate-900/5">
-            <h3 className="text-base font-bold text-slate-900 mb-4">
-              Trạng thái Hạ tầng Nền tảng Dịch vụ
-            </h3>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                { name: "Node.js API Backend", port: ":3001", status: "online", mem: "142 MB", uptime: "99.9%" },
-                { name: "Next.js 14 Frontend", port: ":3000", status: "online", mem: "118 MB", uptime: "99.9%" },
-                { name: "PostgreSQL Database", port: ":5432", status: "online", mem: "84 MB", uptime: "100%" },
-                { name: "Redis Cache & Time-Series", port: ":6379", status: "online", mem: "32 MB", uptime: "100%" },
-              ].map((svc) => (
-                <div
-                  key={svc.name}
-                  className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-slate-900 text-xs">{svc.name}</span>
-                    <Quality value={svc.status} />
-                  </div>
-                  <div className="mt-3 flex items-center justify-between text-xs text-slate-500 font-mono">
-                    <span>Cổng {svc.port}</span>
-                    <span>RAM: {svc.mem}</span>
-                  </div>
+          <section className="rounded-xl border border-slate-200 bg-white p-6">
+            <h3 className="mb-4 text-base font-semibold text-slate-900">Dịch vụ trong phạm vi</h3>
+            <div className="grid gap-4 md:grid-cols-2">
+              {targets.filter((t) => ["service", "process", "host"].includes(t.kind)).map((target) => (
+                <div key={target.id} className="flex items-center justify-between gap-4 rounded-lg bg-slate-50 p-4">
+                  <div className="flex items-center gap-3"><DeviceIcon device={target} size={36} /><span className="text-sm font-medium">{target.name}</span></div>
+                  <Quality value={target.status || "unknown"} />
                 </div>
               ))}
+              {!targets.some((t) => ["service", "process", "host"].includes(t.kind)) && <p className="text-sm text-slate-500">Nguồn chưa cung cấp đối tượng dịch vụ trong phạm vi này.</p>}
             </div>
-          </div>
+          </section>
         </div>
       )}
 
@@ -1579,7 +1472,7 @@ export default function MonitorDashboard() {
       {/* TAB 4: CẢNH BÁO & BẤT THƯỜNG (ALERTS) */}
       {/* ========================================================================= */}
       {tab === "alerts" && (
-        <section className="space-y-5 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xs ring-1 ring-slate-900/5">
+        <section className="space-y-5 rounded-xl border border-slate-200 bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h2 className="text-lg font-bold text-slate-900">
@@ -1590,9 +1483,15 @@ export default function MonitorDashboard() {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              <Quality value={events?.quality || "online"} />
+              <Quality value={events?.quality || "unknown"} />
             </div>
           </div>
+
+          {events?.error && (
+            <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              {events.error}. {events.data ? "Cảnh báo đã lưu có thể đã cũ." : "Chưa có dữ liệu cảnh báo để hiển thị."}
+            </p>
+          )}
 
           {/* FILTER BAR FOR ALERTS */}
           <div className="flex flex-wrap items-center gap-3">
@@ -1673,6 +1572,9 @@ export default function MonitorDashboard() {
                     </p>
                   </div>
 
+                  {event.acknowledged === "1" && (
+                    <span className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">Đã xác nhận</span>
+                  )}
                   {auth.canOperate && event.acknowledged !== "1" && (
                     <button
                       onClick={() => {
@@ -1680,7 +1582,7 @@ export default function MonitorDashboard() {
                         setAckMessage("");
                         setAckError("");
                       }}
-                      className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 active:scale-95 transition-all"
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 active:scale-95 transition-all"
                     >
                       Xác nhận xử lý
                     </button>
@@ -1689,14 +1591,15 @@ export default function MonitorDashboard() {
               );
             })}
 
-            {!alertEvents.length && (
+            {!eventState.available && <p className="py-8 text-center text-sm text-slate-500" role="status">{eventState.label}</p>}
+            {eventState.available && !alertEvents.length && (
               <div className="py-12 text-center text-slate-400">
                 <CheckCircle2 size={32} className="mx-auto text-emerald-500 mb-2" />
                 <p className="text-sm font-semibold text-slate-700">
                   Không có cảnh báo hoặc bất thường nào trong khoảng thời gian này
                 </p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Mọi chỉ số đều nằm trong dải an toàn định mức.
+                  Kết quả phụ thuộc phạm vi lọc và dữ liệu nguồn trả về.
                 </p>
               </div>
             )}
@@ -1708,7 +1611,7 @@ export default function MonitorDashboard() {
       {/* TAB 5: NHẬT KÝ (LOGS) */}
       {/* ========================================================================= */}
       {tab === "logs" && (
-        <section className="space-y-4 rounded-2xl border border-slate-200/80 bg-white p-6 shadow-2xs ring-1 ring-slate-900/5">
+        <section className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-100 pb-4">
             <div>
               <h2 className="text-lg font-bold text-slate-900">
@@ -1720,7 +1623,7 @@ export default function MonitorDashboard() {
             </div>
             <button
               onClick={() => void download()}
-              className="flex items-center gap-2 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-slate-800 transition-all"
+              className="flex items-center gap-2 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white shadow-xs hover:bg-blue-700 transition-all"
             >
               <Download size={14} /> Xuất file CSV
             </button>
@@ -1981,7 +1884,7 @@ function DeviceDetails({
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <Quality value={target.quality || "online"} />
+            <Quality value={target.quality || "unknown"} />
             {onClose && (
               <button
                 onClick={onClose}
@@ -2038,7 +1941,7 @@ function DeviceDetails({
         ))}
 
         <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-400">
-          <span>Nguồn cung cấp: {metadata.provider || metadata.source || "Collector trực tiếp"}</span>
+          <span>Nguồn cung cấp: {metadata.provider || metadata.source || "Chưa rõ"}</span>
           <span>
             {target.lastSeenAt
               ? `Mẫu gần nhất: ${new Date(target.lastSeenAt).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" })}`

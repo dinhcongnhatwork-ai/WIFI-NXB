@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { authenticateRequest } from '@/lib/auth';
 import { normalizeRedirectUrl } from '@/lib/redirect-url';
+import { CampaignHotspotError, validateCampaignTarget } from '@/lib/network/campaign-hotspot';
 
 async function handleGET(
   req: NextRequest,
@@ -51,7 +52,7 @@ async function handlePUT(
 
   try {
     const body = await req.json();
-    const { name, ssid, templateId, startTime, endTime, active, portalEnabled, redirectUrl } = body;
+    const { name, ssid, templateId, startTime, endTime, active, portalEnabled, redirectUrl, wlanConfId, unifiSite } = body;
     const normalizedRedirectUrl = normalizeRedirectUrl(redirectUrl);
     const hasRedirectInput =
       redirectUrl !== undefined &&
@@ -80,6 +81,14 @@ async function handlePUT(
           : null;
     }
 
+    if (wlanConfId !== undefined) data.wlanConfId = wlanConfId || null;
+    if (unifiSite !== undefined) data.unifiSite = unifiSite || null;
+    if (process.env.CAMPAIGN_HOTSPOT_ENABLED === 'true' && !(active === false && ssid === undefined && wlanConfId === undefined && unifiSite === undefined)) {
+      const current = await prisma.campaign.findUnique({ where: { id: params.id } });
+      if (!current) return NextResponse.json({ success: false, error: 'Campaign not found' }, { status: 404 });
+      Object.assign(data, await validateCampaignTarget({ ssid: ssid ?? current.ssid, unifiSite: unifiSite === undefined ? current.unifiSite : unifiSite, wlanConfId: wlanConfId === undefined ? current.wlanConfId : wlanConfId }));
+    }
+
     const campaign = await prisma.campaign.update({
       where: { id: params.id },
       data,
@@ -88,6 +97,7 @@ async function handlePUT(
 
     return NextResponse.json({ success: true, data: campaign });
   } catch (error) {
+    if (error instanceof CampaignHotspotError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     console.error('Campaign PUT error:', error);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },

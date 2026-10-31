@@ -4,6 +4,11 @@ import { isVideoWatched } from '@/lib/redis';
 import { cleanMac, hasPublishedGate, parseDevice, PortalContextError, requiresSignedPortalSession, resolvePortalAccess } from '@/lib/attendance/runtime';
 import { normalizeRedirectUrl, resolvePortalFallbackUrl } from '@/lib/redirect-url';
 
+import { authorizeUnifiPortal, CampaignHotspotError, isUnifiPortalRequest } from '@/lib/network/campaign-hotspot';
+import {GuestClientPendingError} from '@/lib/network/campaign-hotspot-policy';
+import {portalConnectionFailure,portalConnectionPending,refreshedPortalUrl} from '@/lib/network/portal-connection-pending';
+import { wifiConnectionSuccess } from '@/lib/network/portal-success';
+
 export const dynamic = 'force-dynamic';
 
 /**
@@ -32,6 +37,7 @@ export const dynamic = 'force-dynamic';
  *   - campaignId: (optional) campaign ID
  */
 export async function GET(req: NextRequest) {
+  const startedAt=Date.now();
   try {
     const { searchParams } = new URL(req.url);
 
@@ -52,6 +58,9 @@ export async function GET(req: NextRequest) {
     const campaignId = pickFirst('campaignId', 'campaign-id');
     const redirectUrlParam = pickFirst('redirectUrl');
     const portalSessionId = pickFirst('portalSessionId', 'sessionId');
+    const unifiSite = pickFirst('unifiSite', 'site');
+    const unifiRequest = isUnifiPortalRequest(portalSessionId, unifiSite);
+    if (unifiRequest && (!portalSessionId || !mac)) throw new CampaignHotspotError('Signed UniFi portal session required');
 
     if (!mac && !trial && !linkLogin) {
       // No way to authorize — redirect to portal with error
@@ -61,8 +70,8 @@ export async function GET(req: NextRequest) {
 
     if (!portalSessionId && !ssid) return NextResponse.json({ success: false, error: 'Signed portal session required' }, { status: 403 });
     const device = pickFirst('device') ? parseDevice(pickFirst('device')) : undefined;
-    const runtime = await resolvePortalAccess(prisma, { ssid, mac, device, apMac: pickFirst('apMac', 'ap-mac', 'ap'), campaignId }, portalSessionId);
-    if (!runtime) return NextResponse.json({ success: false, error: 'Invalid or expired portal session' }, { status: 400 });
+    const runtime = await resolvePortalAccess(prisma, { ssid, mac, device, unifiSite, apMac: pickFirst('apMac', 'ap-mac', 'ap'), campaignId }, portalSessionId);
+    if (!runtime){const fresh=unifiRequest?refreshedPortalUrl(portalSessionId):null;if(fresh)return new NextResponse(null,{status:303,headers:{Location:fresh,'Cache-Control':'no-store','Referrer-Policy':'no-referrer'}});return NextResponse.json({success:false,error:'Invalid or expired portal session'},{status:400});}
     if (!runtime.effectiveTemplateId) return NextResponse.json({ success: false, error: 'No published portal is configured for this network' }, { status: 403 });
     if (runtime.attendanceAmbiguous) return NextResponse.json({ success: false, error: 'Attendance network context is ambiguous' }, { status: 403 });
     if (!portalSessionId && requiresSignedPortalSession(runtime)) return NextResponse.json({ success: false, error: 'Signed portal session required' }, { status: 403 });
@@ -72,9 +81,14 @@ export async function GET(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Video not watched' }, { status: 403 });
       }
     }
+    if (unifiRequest && hasPublishedGate(runtime.layout, 'attendance_gate', runtime.device) && !runtime.attendanceSession) {
+      return NextResponse.json({ success: false, error: 'Effective attendance session required' }, { status: 403 });
+    }
     if (runtime.attendanceSession && hasPublishedGate(runtime.layout, 'attendance_gate', runtime.device) && !runtime.isAlreadyRegistered) {
       return NextResponse.json({ success: false, error: 'Attendance registration required' }, { status: 403 });
     }
+
+    const unifiAuthorization = unifiRequest ? await authorizeUnifiPortal(portalSessionId) : null;
 
     // Upsert wifi user
     if (mac) {
@@ -110,6 +124,8 @@ export async function GET(req: NextRequest) {
       normalizeRedirectUrl(redirectUrlParam) ||
       normalizeRedirectUrl(campaign?.redirectUrl) ||
       'https://www.nxbctqg.org.vn/';
+
+    if (unifiAuthorization){console.info('[portal-connect]',{outcome:'authorized',durationMs:Date.now()-startedAt});return wifiConnectionSuccess(unifiAuthorization.redirect);}
 
     // ──────────────────────────────────────────────────────────────────
     // Strategy: Redirect to MikroTik trial login URL (active session)
@@ -162,9 +178,11 @@ export async function GET(req: NextRequest) {
     console.warn(`[connect] ⚠️ No valid trial/link-login URL for MAC=${mac} IP=${ip}, redirecting directly to ${finalRedirect}`);
     return NextResponse.redirect(finalRedirect, 302);
   } catch (error) {
+    if(error instanceof GuestClientPendingError||error instanceof CampaignHotspotError&&error.status===409){console.info('[portal-connect]',{outcome:'pending',durationMs:Date.now()-startedAt});return portalConnectionPending(req);}
+    if(error instanceof CampaignHotspotError&&(error.status>=500||error.status===408)){console.warn('[portal-connect]',{outcome:'unavailable',status:error.status,durationMs:Date.now()-startedAt});return portalConnectionFailure(req,error.status);}
+    if (error instanceof CampaignHotspotError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     if (error instanceof PortalContextError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     console.error('Connect redirect error:', error);
-    const fallback = resolvePortalFallbackUrl(process.env.NEXT_PUBLIC_APP_URL);
-    return NextResponse.redirect(fallback, 302);
+    return portalConnectionFailure(req,503);
   }
 }

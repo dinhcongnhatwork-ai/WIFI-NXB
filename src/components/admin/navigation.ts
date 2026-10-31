@@ -33,6 +33,7 @@ export const adminNavigation: AdminNavGroup[] = [
     { href: '/admin/unifi/topology', label: 'Sơ đồ mạng', icon: Network },
     { href: '/admin/unifi/devices', label: 'Thiết bị', icon: Server },
     { href: '/admin/unifi/clients', label: 'Thiết bị khách', icon: Users },
+    { href: '/admin/unifi/exempt-devices', label: 'Thiết bị miễn xác thực', icon: UserCheck },
     { href: '/admin/unifi/ssids', label: 'SSID / WiFi', icon: Radio },
     { href: '/admin/unifi/networks', label: 'Mạng', icon: Cable },
     { href: '/admin/unifi/firewall', label: 'Tường lửa', icon: Shield },
@@ -43,6 +44,7 @@ export const adminNavigation: AdminNavGroup[] = [
   { id: 'mikrotik', label: 'MikroTik', icon: Router, items: [
     { href: '/admin/mikrotik', label: 'Tổng quan MikroTik', icon: Activity, exact: true },
     { href: '/admin/mikrotik/topology', label: 'Sơ đồ mạng', icon: Network },
+    { href: '/admin/mikrotik/inventory', label: 'Thiết bị MikroTik', icon: Server, adminOnly: true },
     { href: '/admin/mikrotik/interfaces', label: 'Cổng kết nối', icon: Cable },
     { href: '/admin/mikrotik/ip', label: 'IP & DHCP', icon: Globe },
     { href: '/admin/mikrotik/firewall', label: 'Tường lửa', icon: Shield },

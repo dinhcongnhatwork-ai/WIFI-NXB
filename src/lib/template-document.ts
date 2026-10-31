@@ -37,29 +37,90 @@ export const DEVICES: Record<DeviceVariant, { label: string; presets: Viewport[]
 };
 export const DEVICE_KEYS = Object.keys(DEVICES) as DeviceVariant[];
 export type MediaRef = { kind: 'object'; key: string } | { kind: 'external'; url: string };
-export interface DecorationElement { id: string; type: 'container' | 'divider' | 'shape'; enabled: boolean; color: string; borderRadius: string }
+export interface DecorationElement {
+  id: string;
+  type: 'container' | 'divider' | 'shape';
+  enabled: boolean;
+  color: string;
+  borderRadius: string;
+  gradient?: string;
+  backgroundImage?: string;
+  backgroundSize?: 'cover' | 'contain' | 'fill' | 'repeat';
+  backgroundPosition?: string;
+  opacity?: number;
+  backdropBlur?: number;
+  borderWidth?: number | string;
+  borderStyle?: 'none' | 'solid' | 'dashed' | 'dotted' | 'double' | 'glass';
+  borderColor?: string;
+  shadow?: 'none' | 'sm' | 'soft' | 'md' | 'medium' | 'lg' | 'strong' | 'xl' | 'glow';
+  shapeVariant?: 'rectangle' | 'circle' | 'pill' | 'arch';
+  dividerStyle?: 'solid' | 'dashed' | 'dotted' | 'gradient-fade';
+  thickness?: number;
+  widthPercent?: number;
+}
 export interface FlowContentElement { id: string; type: 'flow_content'; enabled: boolean; screen: GateScreenId }
 export type NodeElement = TemplateElement | DecorationElement | FlowContentElement;
 export interface NodeLayout { x: number; y: number; width: number; height: number; rotation: number }
 export interface DesignNode {
   id: string; name: string; element: NodeElement; layout: NodeLayout; locked: boolean; hidden: boolean;
   media: Record<string, MediaRef>; children?: DesignNode[];
+  /** Optional grid placement in flow sections; freeform retains its pixel layout. */
+  grid?: { column: number; row: number; columnSpan?: number; rowSpan?: number };
 }
 export interface DesignSection {
   id: string; name: string; mode: 'flow' | 'freeform'; width: number; height: number;
-  gap: number; padding: number; columns: number; align: 'start' | 'center' | 'end'; background: string;
+  gap: number; padding: number; paddingX?: number; paddingY?: number;
+  columns: number; align: 'start' | 'center' | 'end'; background: string;
+  gradient?: string; backgroundImage?: string;
+  backgroundSize?: 'cover' | 'contain' | 'fill' | 'repeat';
+  backgroundPosition?: string;
+  bgOpacity?: number; backdropBlur?: number;
+  borderRadius?: string; borderWidth?: number; borderStyle?: 'none' | 'solid' | 'dashed' | 'glass';
+  borderColor?: string; shadow?: 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'glow';
+  maxWidth?: number;
   locked: boolean; hidden: boolean; nodes: DesignNode[];
 }
 export interface DesignSurface {
-  background: BackgroundConfig & { focalX: number; focalY: number; color: string };
+  background: BackgroundConfig & { focalX: number; focalY: number; color: string; pagePadding?: string };
   backgroundMedia: Record<string, MediaRef>; sections: DesignSection[];
 }
+
+export const STUDIO_FONT_FAMILIES: { label: string; value: string; sample: string }[] = [
+  { label: 'Inter (Hiện đại - Mặc định)', value: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif", sample: 'Aa Tiếng Việt chuẩn' },
+  { label: 'Be Vietnam / Jakarta (Trẻ trung)', value: "'Be Vietnam Pro', 'Plus Jakarta Sans', 'Inter', sans-serif", sample: 'Aa Mượt mà, Năng động' },
+  { label: 'Playfair / Georgia (Sang trọng - Serif)', value: "'Playfair Display', Georgia, 'Times New Roman', serif", sample: 'Aa Khách sạn & Resort' },
+  { label: 'Merriweather (Báo chí - Editorial)', value: "'Merriweather', Georgia, serif", sample: 'Aa Tinh tế, Chuyên nghiệp' },
+  { label: 'Montserrat (Mạnh mẽ - Sự kiện)', value: "'Montserrat', 'Segoe UI', system-ui, sans-serif", sample: 'AA TIÊU ĐỀ ẤN TƯỢNG' },
+  { label: 'JetBrains Mono (Kỹ thuật số / Code)', value: "'JetBrains Mono', ui-monospace, SFMono-Regular, monospace", sample: '01 WIFI_PORTAL_PRO' },
+];
+
+export const STUDIO_GRADIENT_PRESETS: { label: string; value: string; from: string; to: string }[] = [
+  { label: 'NXB Sự Thật (Đỏ Cờ & Vàng Sao)', value: 'linear-gradient(135deg, #450a0a 0%, #991b1b 55%, #b45309 100%)', from: '#991b1b', to: '#b45309' },
+  { label: 'Ocean Blue', value: 'linear-gradient(135deg, #1e3a8a 0%, #2563eb 50%, #0ea5e9 100%)', from: '#2563eb', to: '#0ea5e9' },
+  { label: 'Midnight Institutional', value: 'linear-gradient(160deg, #0f172a 0%, #1e293b 55%, #1d4ed8 100%)', from: '#0f172a', to: '#1d4ed8' },
+  { label: 'Emerald Resort', value: 'linear-gradient(135deg, #064e3b 0%, #059669 60%, #34d399 100%)', from: '#059669', to: '#34d399' },
+  { label: 'Luxury Gold', value: 'linear-gradient(135deg, #1c1917 0%, #78350f 55%, #d97706 100%)', from: '#78350f', to: '#d97706' },
+  { label: 'Sunset Hospitality', value: 'linear-gradient(135deg, #7c2d12 0%, #ea580c 50%, #f59e0b 100%)', from: '#ea580c', to: '#f59e0b' },
+  { label: 'Crimson Event', value: 'linear-gradient(135deg, #881337 0%, #e11d48 55%, #fb7185 100%)', from: '#e11d48', to: '#fb7185' },
+  { label: 'Warm Parchment (Sáng)', value: 'linear-gradient(180deg, #fffbeb 0%, #fef3c7 50%, #fde68a 100%)', from: '#fffbeb', to: '#fde68a' },
+  { label: 'Cloud Slate (Sáng)', value: 'linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%)', from: '#f8fafc', to: '#e2e8f0' },
+];
+
+export const STUDIO_BRAND_PALETTES: { name: string; colors: string[] }[] = [
+  { name: 'NXB Chính trị quốc gia Sự thật', colors: ['#b91c1c', '#d97706', '#fffbeb', '#1e293b', '#ffffff'] },
+  { name: 'Doanh nghiệp Chuẩn (Institutional)', colors: ['#2563eb', '#0f172a', '#ffffff', '#10b981', '#f59e0b'] },
+  { name: 'Khách sạn & Resort (Luxury Gold)', colors: ['#d97706', '#1c1917', '#fafaf9', '#a8a29e', '#fef3c7'] },
+  { name: 'Sinh thái & Nghỉ dưỡng (Emerald)', colors: ['#059669', '#064e3b', '#ecfdf5', '#34d399', '#f59e0b'] },
+  { name: 'Ẩm thực & Cafe (Warm Terracotta)', colors: ['#ea580c', '#292524', '#fff7ed', '#f59e0b', '#dc2626'] },
+  { name: 'Sự kiện & Hội nghị (Royal Red)', colors: ['#e11d48', '#0f172a', '#ffffff', '#fbbf24', '#38bdf8'] },
+];
 export interface DesignVariant extends DesignSurface {
   viewport: Viewport;
   flow: { videoGate?: DesignNode; announcement?: DesignNode; attendanceGate?: DesignNode };
   screens?: Partial<Record<GateScreenId, DesignSurface>>;
 }
 export interface TemplateDocumentV2 {
+  deviceSync?: 'off' | 'content' | 'content-style';
   schemaVersion: 2; variants: Record<DeviceVariant, DesignVariant>; brandColors: string[];
 }
 export interface DocumentIssue { severity: 'error' | 'warning'; message: string; nodeId?: string; variant?: DeviceVariant }
@@ -76,7 +137,7 @@ export function mediaRef(url: string): MediaRef | undefined {
 export function mediaUrl(ref?: MediaRef): string {
   return !ref || !validMediaRef(ref) ? '' : ref.kind === 'object' ? `/api/media/${ref.key.split('/').map(encodeURIComponent).join('/')}` : ref.url;
 }
-export const MEDIA_FIELDS = ['src', 'srcDesktop', 'poster', 'videoUrl', 'imageUrl', 'imageSrc'];
+export const MEDIA_FIELDS = ['src', 'srcDesktop', 'poster', 'videoUrl', 'imageUrl', 'imageSrc', 'backgroundImage'];
 export function materializeElement(node: DesignNode): NodeElement {
   const element = clone(node.element) as unknown as Record<string, unknown>;
   for (const [field, ref] of Object.entries(node.media)) element[field] = mediaUrl(ref);
@@ -98,6 +159,7 @@ export function createNode(type: NodeElement['type'], viewportWidth?: number): D
     : 340;
   let element: NodeElement;
   let layoutHeight = 160;
+  let layoutWidth = targetW;
 
   switch (type) {
     case 'flow_content':
@@ -105,8 +167,9 @@ export function createNode(type: NodeElement['type'], viewportWidth?: number): D
       layoutHeight = 340;
       break;
     case 'logo':
-      element = { ...base, type, src: '', width: '120px', position: 'center' };
-      layoutHeight = 70;
+      element = { ...base, type, src: '', width: '140px', position: 'center' };
+      layoutWidth = 160;
+      layoutHeight = 80;
       break;
     case 'title':
       element = { ...base, type, content: 'Chào mừng bạn đến với Wi-Fi', color: '#ffffff', fontSize: '26px', align: 'center' };
@@ -129,7 +192,7 @@ export function createNode(type: NodeElement['type'], viewportWidth?: number): D
       layoutHeight = Math.round(targetW * 9 / 16);
       break;
     case 'connect_button':
-      element = { ...base, type, text: 'Kết nối WiFi ngay', color: '#ffffff', bgColor: '#2563eb', radius: '14px', buttonWidth: '100%', showPhone: false, phonePlaceholder: 'Nhập số điện thoại nhận ưu đãi', termsText: 'Bằng việc kết nối, bạn đồng ý với Điều khoản dịch vụ.', requireConfirm: false, buttonStyle: 'gradient', buttonEffect: 'pulse', buttonIcon: 'wifi', shadow: 'glow' };
+      element = { ...base, type, text: 'Kết nối WiFi ngay', color: '#ffffff', bgColor: '#2563eb', radius: '14px', buttonWidth: '100%', showPhone: false, phonePlaceholder: 'Nhập số điện thoại nhận ưu đãi', termsText: 'Bằng việc kết nối, bạn đồng ý với Điều khoản dịch vụ.', requireConfirm: false, buttonStyle: 'solid', buttonEffect: 'none', buttonIcon: 'wifi', shadow: 'sm' };
       layoutHeight = 56;
       break;
     case 'attendance_gate':
@@ -164,6 +227,41 @@ export function createNode(type: NodeElement['type'], viewportWidth?: number): D
       element = { ...base, type, height: '24px' };
       layoutHeight = 24;
       break;
+    case 'container':
+      element = {
+        ...base,
+        type: 'container',
+        color: 'rgba(255,255,255,0.08)',
+        borderRadius: '16px',
+        borderStyle: 'solid',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.22)',
+        backdropBlur: 8,
+        shadow: 'sm',
+      };
+      layoutHeight = 180;
+      break;
+    case 'divider':
+      element = {
+        ...base,
+        type: 'divider',
+        color: 'rgba(255,255,255,0.3)',
+        borderRadius: '2px',
+        borderStyle: 'solid',
+      };
+      layoutHeight = 16;
+      break;
+    case 'shape':
+      element = {
+        ...base,
+        type: 'shape',
+        color: '#2563eb',
+        borderRadius: '12px',
+        shadow: 'sm',
+      };
+      layoutWidth = 120;
+      layoutHeight = 120;
+      break;
     default:
       element = { ...base, type: type as 'container' | 'divider' | 'shape', color: type === 'divider' ? '#cbd5e1' : '#2563eb', borderRadius: '8px' };
       layoutHeight = type === 'divider' ? 2 : 80;
@@ -175,7 +273,7 @@ export function createNode(type: NodeElement['type'], viewportWidth?: number): D
     layout: {
       x: 24,
       y: 24,
-      width: targetW,
+      width: layoutWidth,
       height: layoutHeight,
       rotation: 0,
     },
@@ -243,6 +341,14 @@ export function findNode(nodes: DesignNode[], id: string): DesignNode | undefine
     if (child) return child;
   }
 }
+/** Returns the actual sibling array so nested layer operations retain their parent. */
+export function nodeSiblings(nodes: DesignNode[], id: string): DesignNode[] | undefined {
+  if (nodes.some(node => node.id === id)) return nodes;
+  for (const node of nodes) {
+    const siblings = node.children && nodeSiblings(node.children, id);
+    if (siblings) return siblings;
+  }
+}
 export function flowKey(screen: GateScreenId): keyof DesignVariant['flow'] {
   return screen === 'video_gate' ? 'videoGate' : screen === 'attendance_gate' ? 'attendanceGate' : 'announcement';
 }
@@ -308,7 +414,22 @@ export function copyVariant(doc: TemplateDocumentV2, from: DeviceVariant, to: De
   source.sections.forEach(s => { s.id = uid(); regenerate(s.nodes); });
   Object.values(source.screens || {}).forEach(surface => surface?.sections.forEach(s => { s.id = uid(); regenerate(s.nodes); }));
   Object.values(source.flow).forEach(n => { if (n) { n.id = uid(); n.element.id = n.id; } });
-  source.viewport = clone(next.variants[to].viewport);
+  const targetViewport = next.variants[to].viewport;
+  const fitSurface = (surface: DesignSurface) => surface.sections.forEach(section => {
+    const ratio = targetViewport.width / section.width;
+    const fitNodes = (nodes: DesignNode[]) => nodes.forEach(node => {
+      node.layout = { ...node.layout, x: node.layout.x * ratio, y: node.layout.y * ratio, width: Math.max(1, node.layout.width * ratio), height: Math.max(1, node.layout.height * ratio) };
+      if (node.children) fitNodes(node.children);
+    });
+    if (section.mode === 'freeform') { fitNodes(section.nodes); section.height = Math.max(1, section.height * ratio); }
+    section.width = targetViewport.width;
+    section.padding = Math.min(section.padding, targetViewport.width / 4);
+    if (section.paddingX !== undefined) section.paddingX = Math.min(section.paddingX, targetViewport.width / 4);
+    section.columns = Math.min(section.columns, Math.max(1, Math.floor(targetViewport.width / 240)));
+  });
+  fitSurface(source);
+  Object.values(source.screens || {}).forEach(surface => { if (surface) fitSurface(surface); });
+  source.viewport = clone(targetViewport);
   if (append) {
     next.variants[to].sections.push(...source.sections);
     // A gate canvas has exactly one functional block. Append only decorative content.
@@ -335,6 +456,7 @@ export function validateDocument(value: unknown): DocumentIssue[] {
       for (const node of nodes) {
         if (!node || typeof node.id !== 'string' || !node.element || !(node.element.type in COMPONENT_LABELS) || !node.layout || !node.media) { error('Thành phần không hợp lệ.', device); continue; }
         if (ids.has(node.id)) error('ID thành phần trùng lặp.', device, node.id); ids.add(node.id);
+        if (node.grid && (!Number.isInteger(node.grid.column) || !Number.isInteger(node.grid.row) || Object.values(node.grid).some(n => !Number.isInteger(n) || n < 1 || n > 100))) error('Vị trí lưới không hợp lệ.', device, node.id);
         if (!Object.values(node.layout).every(n => typeof n === 'number' && Number.isFinite(n)) || node.layout.width <= 0 || node.layout.height <= 0) error('Kích thước hoặc tọa độ không hợp lệ.', device, node.id);
         const visible = !ancestorHidden && !node.hidden && node.element.enabled;
         if (checkingPortal && visible && node.element.type === 'connect_button') connect = true;

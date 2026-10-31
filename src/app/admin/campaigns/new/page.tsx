@@ -1,5 +1,6 @@
 'use client';
 
+import { localDateTimeToIso } from '@/lib/attendance/constants';
 import { useEffect, useState, FormEvent, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -61,6 +62,7 @@ export default function NewCampaignPage() {
 
       if (ssidsRes.success && Array.isArray(ssidsRes.data)) {
         setUnifiSsids(ssidsRes.data);
+        if (ssidsRes.site) setUnifiSite(ssidsRes.site);
         if (ssidsRes.data.length > 0 && !selectedWlanId) {
           const first = ssidsRes.data[0];
           setSelectedWlanId(first._id);
@@ -114,8 +116,8 @@ export default function NewCampaignPage() {
           wlanConfId: ssidMode === 'unifi' ? selectedWlanId : null,
           unifiSite,
           templateId,
-          startTime,
-          endTime,
+          startTime: localDateTimeToIso(startTime),
+          endTime: localDateTimeToIso(endTime),
           redirectUrl,
           portalEnabled,
         },
@@ -192,6 +194,7 @@ export default function NewCampaignPage() {
           </div>
         </div>
 
+        <p className="text-sm text-slate-500">Chỉ SSID mở có chiến dịch đang hoạt động và mẫu đã xuất bản mới yêu cầu qua portal. SSID có mật khẩu luôn truy cập trực tiếp.</p>
         {/* Double-Bezel Card: Chọn Mạng UniFi (Controller → Site → SSID) */}
         <div className="rounded-[1.5rem] bg-slate-50 p-1.5 ring-1 ring-slate-200/80 shadow-sm">
           <div className="rounded-[calc(1.5rem-0.375rem)] bg-white p-6 shadow-[inset_0_1px_1px_rgba(255,255,255,0.8)] space-y-5">

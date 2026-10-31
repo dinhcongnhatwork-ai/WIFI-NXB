@@ -36,7 +36,8 @@
     ".tmp/admin-ui-dev/types/**/*.ts",
     ".tmp/redesign-build/types/**/*.ts",
     ".tmp/topology-fix-dev/types/**/*.ts",
-    ".tmp/topology-rich-dev/types/**/*.ts"
+    ".tmp/topology-rich-dev/types/**/*.ts",
+    ".tmp/portal-20261031/next-browser/types/**/*.ts"
   ],
   "exclude": [
     "node_modules"

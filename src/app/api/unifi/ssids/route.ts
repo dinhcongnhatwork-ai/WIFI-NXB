@@ -16,11 +16,11 @@ async function handleGET(req: NextRequest) {
 
     if (wlanConfId) {
       const ssid = await client.getSsidById(wlanConfId);
-      return NextResponse.json({ success: true, data: ssid });
+      return NextResponse.json({ success: true, data: ssid, site: client.getSiteId() });
     }
 
     const ssids = await client.getWlanConfs();
-    return NextResponse.json({ success: true, data: ssids });
+    return NextResponse.json({ success: true, data: ssids, site: client.getSiteId() });
   } catch (error) {
     console.error('Unifi ssids error:', error);
     return NextResponse.json(

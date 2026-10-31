@@ -64,6 +64,7 @@ export interface TargetAccessPoint {
   name: string;
   model?: string;
   ip?: string;
+  status?: string;
 }
 
 export interface AttendanceSessionDto {
@@ -72,6 +73,8 @@ export interface AttendanceSessionDto {
   location?: string | null;
   templateId?: string | null;
   templateName?: string | null;
+  effectiveTemplateId?: string | null;
+  templateReadiness?: {published:boolean;attendanceReady:boolean};
   campaignId?: string | null;
   campaignName?: string | null;
   unifiSite: string;
@@ -107,6 +110,7 @@ export interface AttendanceSessionStats {
   lastSyncTime?: string | null;
   syncHealth: 'healthy' | 'warning' | 'error';
   syncLagSeconds?: number;
+  syncMessage?: string;
 }
 
 export interface AttendanceRegistrationDto {

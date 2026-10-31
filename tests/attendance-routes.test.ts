@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
     admin: { findUnique: vi.fn() },
     attendanceSession: { findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn(), create: vi.fn(), update: vi.fn(), delete: vi.fn(), count: vi.fn() },
     attendanceRegistration: { create: vi.fn(), update: vi.fn(), findMany: vi.fn(), findFirst: vi.fn(), findUnique: vi.fn() },
-    template: { findUnique: vi.fn(), delete: vi.fn() },
+    template: { findUnique: vi.fn(), findFirst: vi.fn(), delete: vi.fn() },
     campaign: { findFirst: vi.fn(), findUnique: vi.fn() },
     attendanceLog: { create: vi.fn() }, attendanceInterval: { create: vi.fn(), update: vi.fn() }, attendanceUnregisteredClient: { deleteMany: vi.fn() },
     wifiUser: { upsert: vi.fn() }, log: { create: vi.fn() }, $transaction: vi.fn(), $executeRaw: vi.fn(),
@@ -247,4 +247,26 @@ describe('attendance/public route safety', () => {
     expect(response.status).toBe(403);
   });
 
+});
+
+describe('meeting management and month filters',()=>{
+ it('accepts month/search/status filters and validates bad input',async()=>{
+  const response=await list(req('/api/attendance/sessions?month=2026-10&search=Hội&status=ENDED&page=2&limit=25'));
+  expect(response.status).toBe(200);
+  const input=mocks.db.attendanceSession.findMany.mock.calls[0][0];
+  expect(input.skip).toBe(25);expect(input.where.startTime.gte.toISOString()).toBe('2026-09-30T17:00:00.000Z');
+  expect((await list(req('/api/attendance/sessions?month=2026-99'))).status).toBe(400);
+ });
+ it('allows correcting an ended meeting name while preserving sealed network configuration',async()=>{
+  mocks.db.attendanceSession.findUnique.mockResolvedValue({...session,status:'ENDED'});
+  expect((await update(req('/api/attendance/sessions/meeting',{name:'Tên đã sửa'}),{params:{id:'meeting'}})).status).toBe(200);
+  expect((await update(req('/api/attendance/sessions/meeting',{ssid:'Other'}),{params:{id:'meeting'}})).status).toBe(409);
+ });
+ it('requires ending active meetings before deletion but supports deletion of ended meetings with history',async()=>{
+  expect((await remove(req('/api/attendance/sessions/meeting'),{params:{id:'meeting'}})).status).toBe(409);
+  expect(mocks.db.attendanceSession.delete).not.toHaveBeenCalled();
+  mocks.db.attendanceSession.findUnique.mockResolvedValue({...session,status:'ENDED',registrations:[{id:'existing'}]});
+  expect((await remove(req('/api/attendance/sessions/meeting'),{params:{id:'meeting'}})).status).toBe(200);
+  expect(mocks.db.attendanceSession.delete).toHaveBeenCalledWith({where:{id:'meeting'}});
+ });
 });

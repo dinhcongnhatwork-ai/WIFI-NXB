@@ -28,15 +28,7 @@ echarts.use([
   ToolboxComponent,
   CanvasRenderer,
 ]);
-function formatRate(value: number) {
-  const units = ["bit/s", "Kbit/s", "Mbit/s", "Gbit/s"];
-  let i = 0;
-  while (Math.abs(value) >= 1000 && i < 3) {
-    value /= 1000;
-    i++;
-  }
-  return `${value.toLocaleString("vi-VN", { maximumFractionDigits: 1 })} ${units[i]}`;
-}
+import { formatTrafficRate as formatRate, trafficDirection } from "./chart-format";
 const colors = ["#2563eb", "#64748b", "#93c5fd"];
 export function ChartPanel({
   title,
@@ -63,12 +55,12 @@ export function ChartPanel({
   return (
     <section
       style={{ order }}
-      className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900"
+      className="min-w-0 rounded-lg border border-slate-200 bg-white p-5 "
     >
-      <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">{title}</h3>
+      <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
       {children}
-      <p className="mt-3 text-xs text-slate-500 dark:text-slate-400">
-        {source || "Zabbix · khoảng trống biểu thị mẫu bị thiếu"}
+      <p className="mt-3 text-xs text-slate-500">
+        {source || "Khoảng trống biểu thị mẫu bị thiếu"}
       </p>
     </section>
   );
@@ -78,11 +70,13 @@ export function TimeChart({
   series,
   unit = "",
   area = false,
+  compact = false,
 }: {
   title: string;
   series: any[];
   unit?: string;
   area?: boolean;
+  compact?: boolean;
 }) {
   const chartRef = useRef<ReturnType<
     ReactEChartsCore["getEchartsInstance"]
@@ -106,6 +100,10 @@ export function TimeChart({
   const rows = series
     .filter((s) => s?.data?.points?.some((p: any) => p.value !== null))
     .slice(0, 3);
+  const recordedTimes = compact ? Array.from(new Set<number>(rows.flatMap((s) =>
+    s.data.points.filter((p: any) => p.value != null && Number.isFinite(Number(p.at))).map((p: any) => Number(p.at)),
+  ))).sort((a, b) => a - b) : [];
+  const singleTime = recordedTimes.length === 1;
   const stale = series.some(
     (s) =>
       s?.quality === "stale" ||
@@ -115,8 +113,8 @@ export function TimeChart({
   const option = {
     animation: false,
     color: colors,
-    textStyle: { fontFamily: "Inter, sans-serif" },
-    grid: { left: 48, right: 18, top: 40, bottom: 55 },
+    textStyle: { fontFamily: "Inter, sans-serif", fontSize: 12 },
+    grid: compact ? { left: 42, right: 12, top: 76, bottom: 45 } : { left: 12, right: 20, top: 48, bottom: 65, containLabel: true },
     tooltip: {
       renderMode: "richText",
       trigger: "axis",
@@ -142,16 +140,28 @@ export function TimeChart({
     },
     legend: {
       type: "scroll",
-      top: 5,
-      textStyle: { color: "#64748b", fontSize: 11 },
+      top: compact ? 0 : 5,
+      textStyle: { color: "#475569", fontSize: compact ? 11 : 12 },
+      formatter: (name: string) => {
+        if (compact) return name;
+        const row = rows.find((s) => (s.label || s.data.metric) === name);
+        const value = row?.data?.points?.at(-1)?.value;
+        return `${name}  ${value == null ? "—" : unit === "bit/s" ? formatRate(value) : `${Number(value).toLocaleString("vi-VN", { maximumFractionDigits: 1 })} ${unit}`}`;
+      },
     },
-    toolbox: { feature: { dataZoom: { yAxisIndex: "none" } }, right: 0 },
+    toolbox: compact ? undefined : { feature: { dataZoom: { yAxisIndex: "none" } }, right: 0 },
     xAxis: {
       type: "time",
+      min: recordedTimes.length ? recordedTimes[0] - (singleTime ? 30000 : 0) : undefined,
+      max: recordedTimes.length ? recordedTimes[recordedTimes.length - 1] + (singleTime ? 30000 : 0) : undefined,
+      splitNumber: compact ? 3 : 5,
       axisLabel: {
         color: "#64748b",
-        formatter: (value: number) =>
-          new Date(value).toLocaleString("vi-VN", {
+        hideOverlap: true,
+        fontSize: compact ? 11 : 12,
+        formatter: (value: number) => compact
+          ? new Date(value).toLocaleTimeString("vi-VN", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+          : new Date(value).toLocaleString("vi-VN", {
             timeZone: "Asia/Bangkok",
             day: "2-digit",
             month: "2-digit",
@@ -163,21 +173,22 @@ export function TimeChart({
     },
     yAxis: {
       type: "value",
-      name: unit,
+      name: unit === "bit/s" ? "bps" : unit,
       axisLabel: {
         color: "#64748b",
         ...(unit === "bit/s" ? { formatter: formatRate } : {}),
       },
       splitLine: { lineStyle: { color: "#f1f5f9" } },
     },
-    dataZoom: [
+    dataZoom: compact ? [{ type: "inside", filterMode: "none" }] : [
       { type: "inside", filterMode: "none" },
       { type: "slider", height: 16, bottom: 5, borderColor: "#e2e8f0" },
     ],
     series: rows.map((s, i) => ({
       name: s.label || s.data.metric,
       type: "line",
-      showSymbol: false,
+      showSymbol: compact && s.data.points.filter((p: any) => p.value != null).length === 1,
+      symbolSize: 6,
       connectNulls: false,
       sampling: "lttb",
       areaStyle: area ? { opacity: 0.07 } : undefined,
@@ -227,7 +238,8 @@ export function TimeChart({
             name: `${s.label} · ${s.data.aggregation === "trung bình theo giờ" ? "p95 trung bình giờ" : "p95"} ${s.data.p95.toFixed(1)} ms`,
           }
         : {}),
-      itemStyle: { color: colors[i] },
+      itemStyle: { color: unit === "bit/s" ? trafficDirection(s.data.metric).color : colors[i] },
+      lineStyle: { width: 2 },
     })),
   };
   return (
@@ -235,7 +247,7 @@ export function TimeChart({
       title={title}
       source={
         rows.length
-          ? `Zabbix · ${rows[0].data.aggregation || "mẫu gốc"} · ${rows[0].data.lastAt ? new Date(rows[0].data.lastAt).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" }) : "chưa có thời điểm"}`
+          ? `${rows[0].data.source || "Nguồn giám sát"} · ${rows[0].data.aggregation || "mẫu gốc"} · ${rows[0].data.lastAt ? new Date(rows[0].data.lastAt).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" }) : "chưa có thời điểm"}`
           : undefined
       }
     >
@@ -246,10 +258,10 @@ export function TimeChart({
             echarts={echarts}
             option={option}
             notMerge
-            style={{ height: 260 }}
+            style={{ height: unit === "bit/s" ? 320 : 280 }}
           />
         ) : (
-          <div className="flex h-[260px] items-center justify-center text-center text-sm text-slate-500">
+          <div className="flex h-[280px] items-center justify-center text-center text-sm text-slate-500">
             {series.find((s) => s?.error)?.error ||
               "Nguồn chưa cung cấp chỉ số trong khoảng này"}
           </div>
@@ -274,12 +286,12 @@ export function IncidentChart({
   return (
     <ChartPanel
       title="Sự cố theo thời gian"
-      source={`Zabbix · event.get · ${data?.quality || "đang tải"}${data?.data?.truncated ? " · đã giới hạn 10.000 sự kiện" : ""}`}
+      source={`Sự kiện giám sát · ${data?.quality || "đang tải"}${data?.data?.truncated ? " · đã giới hạn 10.000 sự kiện" : ""}`}
     >
       {rows.length ? (
         <ReactEChartsCore
           echarts={echarts}
-          style={{ height: 260 }}
+          style={{ height: 280 }}
           onEvents={{ click: (p: any) => onBucket(rows[p.dataIndex].at) }}
           option={{
             animation: false,
@@ -313,7 +325,7 @@ export function IncidentChart({
           }}
         />
       ) : (
-        <div className="flex h-[260px] items-center justify-center text-sm text-slate-500">
+        <div className="flex h-[280px] items-center justify-center text-sm text-slate-500">
           {data?.error || "Đang tải lịch sử sự cố"}
         </div>
       )}
@@ -335,12 +347,12 @@ export function AvailabilityChart({ series }: { series: any[] }) {
   return (
     <ChartPanel
       title="Khả dụng theo đối tượng"
-      source="Zabbix · available · xanh: khả dụng, đỏ: gián đoạn, xám: thiếu mẫu; trend là trung bình giờ"
+      source="Lịch sử khả dụng · xanh: khả dụng, đỏ: gián đoạn, xám: thiếu mẫu; trend là trung bình giờ"
     >
       {rows.length ? (
         <ReactEChartsCore
           echarts={echarts}
-          style={{ height: Math.max(190, rows.length * 32 + 85) }}
+          style={{ height: Math.max(280, rows.length * 32 + 85) }}
           option={{
             animation: false,
             tooltip: {
@@ -383,7 +395,7 @@ export function AvailabilityChart({ series }: { series: any[] }) {
           }}
         />
       ) : (
-        <p className="py-12 text-center text-sm text-slate-500">
+        <p className="flex min-h-[280px] items-center justify-center text-center text-sm text-slate-500">
           Chưa có lịch sử khả dụng
         </p>
       )}
@@ -417,13 +429,13 @@ export function HistorySparkline({ data }: { data: any }) {
   return (
     <svg
       role="img"
-      aria-label="Xu hướng từ lịch sử Zabbix"
+      aria-label="Xu hướng từ lịch sử giám sát"
       width="80"
       height="26"
       viewBox="0 0 80 26"
       className="shrink-0"
     >
-      <title>{`Zabbix · ${data.data.aggregation || "mẫu gốc"} · ${new Date(last).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" })}${data.quality === "stale" || data.data.quality === "stale" ? " · cũ" : ""}`}</title>
+      <title>{`${data.data.source || "Nguồn giám sát"} · ${data.data.aggregation || "mẫu gốc"} · ${new Date(last).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" })}${data.quality === "stale" || data.data.quality === "stale" ? " · cũ" : ""}`}</title>
       {segments.map((d, i) => (
         <path key={i} d={d} fill="none" stroke="#2563eb" strokeWidth="1.5" />
       ))}

@@ -1,7 +1,7 @@
 import { FormFieldDefinition, AttendanceRegistrationStatus } from '@/types/attendance';
 
 export const DEFAULT_WARNING_THRESHOLD_MINUTES = 15;
-export const DEFAULT_POLL_INTERVAL_MS = 10000; // 10 seconds per PLAN.MD
+export const DEFAULT_POLL_INTERVAL_MS = 3000;
 
 export const DEFAULT_FORM_FIELDS: FormFieldDefinition[] = [
   {
@@ -55,8 +55,8 @@ export const STATUS_CONFIG: Record<
     glowColor: 'rgba(245, 158, 11, 0.15)',
   },
   ALERT_ABSENT: {
-    label: 'Vắng mặt (≥ 15p)',
-    sublabel: 'Vắng liên tục quá 15 phút',
+    label: 'Vắng quá ngưỡng',
+    sublabel: 'Mất kết nối quá thời gian quy định',
     badgeBg: 'bg-rose-500/10 dark:bg-rose-400/10',
     badgeText: 'text-rose-700 dark:text-rose-400',
     badgeBorder: 'border-rose-500/20 dark:border-rose-400/20',

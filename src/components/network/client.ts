@@ -4,6 +4,7 @@ import {authenticatedFetch} from '@/lib/api';
 export function networkFetch(input:RequestInfo|URL,init?:RequestInit):Promise<Response>{
  const url=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url,window.location.origin);
  const scope=new URLSearchParams(window.location.search);
+ if(url.origin===window.location.origin&&url.pathname.startsWith('/api/mikrotik/topology')&&(scope.get('scope')==='fleet'||(!scope.get('connectionId')&&window.location.pathname==='/admin/mikrotik/topology')))url.searchParams.set('scope','fleet');
  if(url.origin===window.location.origin)for(const key of ['connectionId','siteId'])if(scope.has(key)&&!url.searchParams.has(key))url.searchParams.set(key,scope.get(key)!);
  return authenticatedFetch(url,init);
 }

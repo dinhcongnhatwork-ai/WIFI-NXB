@@ -144,6 +144,7 @@ export async function generateAttendanceExcelWorkbook(data: AttendanceExportData
     'Lần thấy cuối',
     'Tổng hiện diện (phút)',
     'Tổng vắng mặt (phút)',
+    'Không xác định (phút)',
     'Số cảnh báo đỏ',
     'Trạng thái',
   ];
@@ -174,7 +175,7 @@ export async function generateAttendanceExcelWorkbook(data: AttendanceExportData
 
     // Determine latest out / disconnect time
     const regIntervals = data.intervals.filter((i) => i.registrationId === reg.id);
-    const lastLeftInterval = [...regIntervals].reverse().find((i) => i.leftAt);
+    const lastLeftInterval = regIntervals.filter(i=>i.status==='PRESENT' && i.leftAt).sort((a,b)=>Date.parse(b.leftAt!)-Date.parse(a.leftAt!))[0];
     const lastLeftTime = reg.absentStartedAt || lastLeftInterval?.leftAt;
 
     const row = sheetSummary.addRow([
@@ -190,6 +191,7 @@ export async function generateAttendanceExcelWorkbook(data: AttendanceExportData
       formatVietnamTime(reg.lastSeenAt),
       Math.round(reg.totalPresentSeconds / 60),
       Math.round(reg.totalAbsentSeconds / 60),
+      Math.round((reg.totalUnknownSeconds || 0) / 60),
       reg.warningCount,
       statusLabel,
     ]);
@@ -370,13 +372,13 @@ export async function generateAttendanceExcelWorkbook(data: AttendanceExportData
           : log.type === 'RECONNECT'
             ? 'Kết nối lại phòng họp'
             : log.type === 'ALERT_TRIGGERED'
-              ? 'Cảnh báo đỏ (≥ 15p)'
+              ? `Cảnh báo đỏ (≥ ${data.session.warningThresholdMinutes}p)`
               : log.type === 'RECOVERED'
                 ? 'Quay lại sau cảnh báo'
                 : log.type === 'DEVICE_CHANGE'
                   ? 'Đổi thiết bị chính'
                   : log.type === 'SYSTEM_SYNC'
-                    ? 'Thu hồi IP / Đồng bộ MikroTik'
+                    ? 'Đồng bộ / Điều chỉnh hệ thống'
                     : log.type;
 
     const devInfo =

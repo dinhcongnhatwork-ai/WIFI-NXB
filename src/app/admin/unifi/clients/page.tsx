@@ -1,4 +1,5 @@
 'use client';
+import { DeviceIcon } from '@/components/network/DeviceIcon';
 import { networkFetch } from '@/components/network/client';
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -215,7 +216,7 @@ export default function UnifiClientsPage() {
   };
 
   const getSignalLabel = (signal?: number): { text: string; color: string; percent: number } => {
-    if (signal === undefined || signal === 0) return { text: 'Không rõ', color: 'text-slate-400', percent: 0 };
+    if (signal === undefined || signal === 0) return { text: 'Không rõ', color: 'text-slate-500', percent: 0 };
     // -30dBm = 100%, -90dBm = 0%
     const percent = Math.min(100, Math.max(5, Math.round(((signal + 90) / 60) * 100)));
     if (signal >= -55) return { text: 'Tuyệt vời', color: 'text-emerald-500', percent };
@@ -240,8 +241,8 @@ export default function UnifiClientsPage() {
             exit={{ opacity: 0, y: -20, scale: 0.95 }}
             className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium ${
               feedbackMsg.type === 'success'
-                ? 'bg-emerald-950/90 text-emerald-200 border-emerald-500/40 backdrop-blur-md'
-                : 'bg-rose-950/90 text-rose-200 border-rose-500/40 backdrop-blur-md'
+                ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                : 'bg-rose-50 text-rose-800 border-rose-200'
             }`}
           >
             {feedbackMsg.type === 'success' ? (
@@ -271,7 +272,7 @@ export default function UnifiClientsPage() {
           <button
             onClick={fetchClients}
             disabled={loading}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition-all text-sm font-medium disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg  transition-all text-sm font-medium disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             Làm mới
@@ -280,11 +281,11 @@ export default function UnifiClientsPage() {
       </div>
 
       {/* Filter Bar */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6 shadow-sm">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6 ">
         <div className="flex flex-wrap items-center gap-3">
           <div className="flex-1 min-w-[240px]">
             <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
               <input
                 type="text"
                 placeholder="Tìm kiếm theo tên thiết bị, MAC, IP, SSID, AP..."
@@ -296,7 +297,7 @@ export default function UnifiClientsPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+            <Filter className="w-4 h-4 text-slate-500 shrink-0" />
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
@@ -314,7 +315,7 @@ export default function UnifiClientsPage() {
               className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-700 font-medium"
             >
               <option value="all">Tất cả trạng thái</option>
-              <option value="active">Đang hoạt động (Active)</option>
+              <option value="active">Không bị chặn</option>
               <option value="blocked">Đã bị chặn (Blocked)</option>
             </select>
           </div>
@@ -323,37 +324,37 @@ export default function UnifiClientsPage() {
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <div className="bg-white rounded-xl border border-slate-200 p-4 ">
           <div className="flex items-center justify-between text-slate-500 mb-1">
             <span className="text-xs font-medium uppercase tracking-wider">Tổng kết nối</span>
             <Users className="w-4 h-4 text-blue-500" />
           </div>
           <p className="text-2xl font-bold text-slate-900">{filteredClients.length}</p>
         </div>
-        <div className="bg-white rounded-xl border border-emerald-100 p-4 shadow-sm">
+        <div className="bg-white rounded-xl border border-emerald-100 p-4 ">
           <div className="flex items-center justify-between text-emerald-600 mb-1">
-            <span className="text-xs font-medium uppercase tracking-wider">Hoạt động</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Không bị chặn</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-500" />
           </div>
           <p className="text-2xl font-bold text-emerald-600">{activeCount}</p>
         </div>
-        <div className="bg-white rounded-xl border border-blue-100 p-4 shadow-sm">
+        <div className="bg-white rounded-xl border border-blue-100 p-4 ">
           <div className="flex items-center justify-between text-blue-600 mb-1">
             <span className="text-xs font-medium uppercase tracking-wider">Guest Portal</span>
             <Wifi className="w-4 h-4 text-blue-500" />
           </div>
           <p className="text-2xl font-bold text-blue-600">{guestCount}</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <div className="bg-white rounded-xl border border-slate-200 p-4 ">
           <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium uppercase tracking-wider">Tổng Upload</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Tổng TX (gửi)</span>
             <ArrowUpRight className="w-4 h-4 text-emerald-500" />
           </div>
           <p className="text-xl font-bold text-slate-900">{formatBytes(totalTx)}</p>
         </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+        <div className="bg-white rounded-xl border border-slate-200 p-4 ">
           <div className="flex items-center justify-between text-slate-500 mb-1">
-            <span className="text-xs font-medium uppercase tracking-wider">Tổng Download</span>
+            <span className="text-xs font-medium uppercase tracking-wider">Tổng RX (nhận)</span>
             <ArrowDownLeft className="w-4 h-4 text-sky-500" />
           </div>
           <p className="text-xl font-bold text-slate-900">{formatBytes(totalRx)}</p>
@@ -361,7 +362,7 @@ export default function UnifiClientsPage() {
       </div>
 
       {/* Main Table */}
-      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm">
+      <div className="bg-white rounded-xl border border-slate-200 overflow-hidden ">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
@@ -371,7 +372,7 @@ export default function UnifiClientsPage() {
                 <th className="px-5 py-3.5">Loại</th>
                 <th className="px-5 py-3.5">SSID / AP</th>
                 <th className="px-5 py-3.5">Sóng & Signal</th>
-                <th className="px-5 py-3.5">Lưu lượng</th>
+                <th className="px-5 py-3.5">Tổng lưu lượng</th>
                 <th className="px-5 py-3.5">Thời gian</th>
                 <th className="px-5 py-3.5">Trạng thái</th>
                 <th className="px-5 py-3.5 text-center">Thao tác Controller</th>
@@ -394,20 +395,20 @@ export default function UnifiClientsPage() {
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0 border border-slate-200 text-slate-600">
-                          <Icon className="w-5 h-5" />
+                          <DeviceIcon device={{ type: "client", name: client.name || client.hostname, meta: { hostname: client.hostname, osName: client.osName, osClass: client.osClass, oui: client.oui } }} size={36} fallback={<Icon className="w-6 h-6" />} />
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
-                            <p className="font-semibold text-slate-900 leading-tight">
+                            <p className="text-[15px] font-semibold text-slate-900 leading-tight">
                               {client.name || client.hostname || 'Thiết bị không rõ'}
                             </p>
                             {client.name && (
-                              <span className="text-[10px] px-1.5 py-0.2 bg-slate-100 text-slate-500 rounded">
+                              <span className="text-[11px] px-1.5 py-0.2 bg-slate-100 text-slate-500 rounded">
                                 {client.hostname}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-slate-400 mt-0.5">
+                          <p className="text-xs text-slate-500 mt-0.5">
                             {client.oui || client.osName || 'Standard Client'}
                           </p>
                         </div>
@@ -416,7 +417,7 @@ export default function UnifiClientsPage() {
 
                     <td className="px-5 py-4">
                       <p className="font-mono text-xs font-semibold text-slate-700">{client.ip || '-'}</p>
-                      <p className="font-mono text-[11px] text-slate-400 mt-0.5">{client.mac}</p>
+                      <p className="font-mono text-[11px] text-slate-500 mt-0.5">{client.mac}</p>
                     </td>
 
                     <td className="px-5 py-4">
@@ -431,7 +432,7 @@ export default function UnifiClientsPage() {
                           </span>
                         )}
                         {client.isGuest && (
-                          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                          <span className="inline-flex px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
                             Guest
                           </span>
                         )}
@@ -447,7 +448,7 @@ export default function UnifiClientsPage() {
                           </p>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-400">-</span>
+                        <span className="text-xs text-slate-500">-</span>
                       )}
                     </td>
 
@@ -469,7 +470,7 @@ export default function UnifiClientsPage() {
                           </div>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-400">-</span>
+                        <span className="text-xs text-slate-500">-</span>
                       )}
                     </td>
 
@@ -497,7 +498,7 @@ export default function UnifiClientsPage() {
                         </span>
                       ) : (
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Kết nối
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> Không bị chặn
                         </span>
                       )}
                     </td>
@@ -598,10 +599,10 @@ export default function UnifiClientsPage() {
                 {/* Drawer Header */}
                 <div className="p-6 border-b border-slate-200 bg-slate-50/50 flex items-start justify-between">
                   <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shadow-sm shrink-0">
+                    <div className="w-14 h-14 rounded-2xl bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600  shrink-0">
                       {(() => {
                         const Icon = getDeviceIcon(selectedClient.hostname, selectedClient.osName, selectedClient.oui);
-                        return <Icon className="w-7 h-7" />;
+                        return <DeviceIcon device={{ type: "client", name: selectedClient.name || selectedClient.hostname, meta: { hostname: selectedClient.hostname, osName: selectedClient.osName, osClass: selectedClient.osClass, oui: selectedClient.oui } }} size={52} fallback={<Icon className="w-8 h-8" />} />;
                       })()}
                     </div>
                     <div>
@@ -610,24 +611,24 @@ export default function UnifiClientsPage() {
                           {selectedClient.name || selectedClient.hostname || 'Thiết bị khách'}
                         </h2>
                         {selectedClient.isBlocked ? (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-700">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-100 text-rose-700">
                             BLOCKED
                           </span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700">
-                            ACTIVE
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-100 text-emerald-700">
+                            KHÔNG BỊ CHẶN
                           </span>
                         )}
                         {selectedClient.isGuest && (
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-700">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-blue-100 text-blue-700">
                             GUEST
                           </span>
                         )}
                       </div>
                       <p className="text-xs text-slate-500 font-mono mt-0.5">
-                        IP: {selectedClient.ip || 'DHCP'} &bull; MAC: {selectedClient.mac}
+                        IP: {selectedClient.ip || 'Chưa có IP'} &bull; MAC: {selectedClient.mac}
                       </p>
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      <p className="text-xs text-slate-500 mt-0.5">
                         Nhà sản xuất: {selectedClient.oui || 'Chưa nhận diện'}
                       </p>
                     </div>
@@ -635,7 +636,7 @@ export default function UnifiClientsPage() {
 
                   <button
                     onClick={() => setSelectedClient(null)}
-                    className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                    className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                   >
                     <X className="w-5 h-5" />
                   </button>
@@ -656,7 +657,7 @@ export default function UnifiClientsPage() {
                           }
                         }}
                         disabled={actionLoading === selectedClient.mac}
-                        className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-white border border-slate-200 hover:bg-amber-50 hover:border-amber-300 text-slate-700 text-xs font-semibold transition-all shadow-sm"
+                        className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-white border border-slate-200 hover:bg-amber-50 hover:border-amber-300 text-slate-700 text-xs font-semibold transition-all "
                       >
                         <RefreshCcw className={`w-4 h-4 text-amber-500 mb-1 ${actionLoading === selectedClient.mac ? 'animate-spin' : ''}`} />
                         Kick / Reconnect
@@ -669,7 +670,7 @@ export default function UnifiClientsPage() {
                           }
                         }}
                         disabled={actionLoading === selectedClient.mac}
-                        className={`flex flex-col items-center justify-center p-2.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold transition-all shadow-sm ${
+                        className={`flex flex-col items-center justify-center p-2.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold transition-all  ${
                           selectedClient.isBlocked
                             ? 'hover:bg-emerald-50 hover:border-emerald-300 text-emerald-700'
                             : 'hover:bg-rose-50 hover:border-rose-300 text-rose-700'
@@ -693,7 +694,7 @@ export default function UnifiClientsPage() {
                           handleClientAction(selectedClient.mac, selectedClient.authorized ? 'unauthorize' : 'authorize');
                         }}
                         disabled={actionLoading === selectedClient.mac}
-                        className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-white border border-slate-200 hover:bg-blue-50 hover:border-blue-300 text-slate-700 text-xs font-semibold transition-all shadow-sm"
+                        className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-white border border-slate-200 hover:bg-blue-50 hover:border-blue-300 text-slate-700 text-xs font-semibold transition-all "
                       >
                         <ShieldCheck className="w-4 h-4 text-blue-500 mb-1" />
                         {selectedClient.authorized ? 'Hủy Guest Auth' : 'Cấp Guest Auth'}
@@ -705,7 +706,7 @@ export default function UnifiClientsPage() {
                           setEditName(selectedClient.name || selectedClient.hostname || '');
                           setEditNote(selectedClient.note || '');
                         }}
-                        className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition-all shadow-sm"
+                        className="flex flex-col items-center justify-center p-2.5 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-semibold transition-all "
                       >
                         <Edit3 className="w-4 h-4 text-slate-500 mb-1" />
                         Đổi tên & Note
@@ -745,22 +746,22 @@ export default function UnifiClientsPage() {
                       <div className="p-3 bg-slate-50 rounded-lg">
                         <span className="text-xs text-slate-500 block mb-1">Tỷ lệ hài lòng (Satisfaction)</span>
                         <span className="text-xl font-bold text-slate-900">
-                          {selectedClient.satisfaction ? `${selectedClient.satisfaction}%` : '99%'}
+                          {selectedClient.satisfaction !== undefined ? `${selectedClient.satisfaction}%` : 'Chưa có dữ liệu'}
                         </span>
-                        <p className="text-[11px] text-emerald-600 mt-1">Kết nối ổn định</p>
+                        <p className="text-[11px] text-slate-500 mt-1">Chỉ số do Controller cung cấp</p>
                       </div>
 
                       <div className="p-3 bg-slate-50 rounded-lg">
-                        <span className="text-xs text-slate-500 block mb-1">Tốc độ TX / RX Rate</span>
+                        <span className="text-xs text-slate-500 block mb-1">Tốc độ liên kết TX</span>
                         <span className="text-sm font-bold text-slate-800">
-                          {selectedClient.txRate ? `${Math.round(selectedClient.txRate / 1000)} Mbps` : 'Auto / WiFi 6'}
+                          {selectedClient.txRate ? `${Math.round(selectedClient.txRate / 1000)} Mbps` : 'Chưa có dữ liệu'}
                         </span>
                       </div>
 
                       <div className="p-3 bg-slate-50 rounded-lg">
                         <span className="text-xs text-slate-500 block mb-1">Băng tần (Band)</span>
                         <span className="text-sm font-bold text-slate-800">
-                          {selectedClient.channel && selectedClient.channel > 14 ? '5 GHz (High Speed)' : '2.4 GHz'}
+                          {selectedClient.radio || (selectedClient.channel ? `Kênh ${selectedClient.channel}` : 'Chưa có dữ liệu')}
                         </span>
                       </div>
                     </div>
@@ -775,34 +776,34 @@ export default function UnifiClientsPage() {
 
                     <div className="grid grid-cols-2 gap-3 text-xs">
                       <div>
-                        <span className="text-slate-400 block mb-0.5">Access Point liên kết</span>
+                        <span className="text-slate-500 block mb-0.5">Access Point liên kết</span>
                         <p className="font-bold text-slate-800 text-sm">{selectedClient.apName || '-'}</p>
                         <p className="font-mono text-slate-500 text-[11px]">{selectedClient.apMac}</p>
                       </div>
 
                       <div>
-                        <span className="text-slate-400 block mb-0.5">Tên mạng (SSID)</span>
+                        <span className="text-slate-500 block mb-0.5">Tên mạng (SSID)</span>
                         <p className="font-bold text-slate-800 text-sm">{selectedClient.ssid || '-'}</p>
                         <p className="font-mono text-slate-500 text-[11px]">{selectedClient.bssid || '-'}</p>
                       </div>
 
                       <div className="pt-2">
-                        <span className="text-slate-400 block mb-0.5">Địa chỉ IP</span>
+                        <span className="text-slate-500 block mb-0.5">Địa chỉ IP</span>
                         <p className="font-mono font-bold text-slate-800">{selectedClient.ip || 'Chưa cấp IP'}</p>
                       </div>
 
                       <div className="pt-2">
-                        <span className="text-slate-400 block mb-0.5">Địa chỉ MAC vật lý</span>
+                        <span className="text-slate-500 block mb-0.5">Địa chỉ MAC vật lý</span>
                         <p className="font-mono font-bold text-slate-800">{selectedClient.mac}</p>
                       </div>
 
                       <div>
-                        <span className="text-slate-400 block mb-0.5">Phân loại mạng</span>
-                        <p className="font-semibold text-slate-800">{selectedClient.networkName || 'LAN Mặc định'}</p>
+                        <span className="text-slate-500 block mb-0.5">Phân loại mạng</span>
+                        <p className="font-semibold text-slate-800">{selectedClient.networkName || 'Chưa có dữ liệu'}</p>
                       </div>
 
                       <div>
-                        <span className="text-slate-400 block mb-0.5">Thời gian hoạt động (Uptime)</span>
+                        <span className="text-slate-500 block mb-0.5">Thời gian hoạt động (Uptime)</span>
                         <p className="font-semibold text-slate-800">
                           {selectedClient.uptime ? formatUptime(selectedClient.uptime) : '-'}
                         </p>
@@ -820,7 +821,7 @@ export default function UnifiClientsPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-100">
                         <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-xs mb-1">
-                          <ArrowUpRight className="w-4 h-4" /> Upload (Tải lên)
+                          <ArrowUpRight className="w-4 h-4" /> Tổng TX (gửi)
                         </div>
                         <p className="text-lg font-bold text-slate-900">{formatBytes(selectedClient.txBytes || 0)}</p>
                         <p className="text-xs text-slate-500 mt-1">
@@ -830,7 +831,7 @@ export default function UnifiClientsPage() {
 
                       <div className="p-3 bg-sky-50/60 rounded-xl border border-sky-100">
                         <div className="flex items-center gap-1.5 text-sky-700 font-bold text-xs mb-1">
-                          <ArrowDownLeft className="w-4 h-4" /> Download (Tải xuống)
+                          <ArrowDownLeft className="w-4 h-4" /> Tổng RX (nhận)
                         </div>
                         <p className="text-lg font-bold text-slate-900">{formatBytes(selectedClient.rxBytes || 0)}</p>
                         <p className="text-xs text-slate-500 mt-1">
@@ -850,7 +851,7 @@ export default function UnifiClientsPage() {
 
                 {/* Drawer Footer */}
                 <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between">
-                  <span className="text-xs text-slate-400">UniFi Network Controller Sync</span>
+                  <span className="text-xs text-slate-500">UniFi Network Controller Sync</span>
                   <button
                     onClick={() => setSelectedClient(null)}
                     className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-lg text-xs font-semibold transition-colors"
@@ -888,7 +889,7 @@ export default function UnifiClientsPage() {
                 </div>
                 <button
                   onClick={() => setEditModal({ open: false, client: null })}
-                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-400 hover:text-slate-600"
+                  className="p-1.5 hover:bg-slate-100 rounded-lg text-slate-500 hover:text-slate-600"
                 >
                   <X className="w-5 h-5" />
                 </button>
@@ -906,7 +907,7 @@ export default function UnifiClientsPage() {
                     placeholder="VD: iPhone Giám Đốc, Laptop Kế Toán..."
                     className="w-full px-3.5 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   />
-                  <p className="text-[11px] text-slate-400 mt-1">
+                  <p className="text-[11px] text-slate-500 mt-1">
                     Tên này sẽ hiển thị thay thế cho hostname trong Controller
                   </p>
                 </div>
@@ -934,7 +935,7 @@ export default function UnifiClientsPage() {
                   <button
                     onClick={handleSaveEdit}
                     disabled={isSavingEdit}
-                    className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
+                    className="flex items-center gap-2 px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold  transition-all disabled:opacity-50"
                   >
                     {isSavingEdit && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                     Lưu vào Controller

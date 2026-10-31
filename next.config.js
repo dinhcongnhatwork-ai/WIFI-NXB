@@ -13,9 +13,13 @@ const nextConfig = {
       },
     ],
   },
+  webpack(config, { isServer }) {
+    if (isServer) config.externals.push('ssh2');
+    return config;
+  },
   experimental: {
     serverActions: {
-      bodySizeLimit: '50mb',
+      bodySizeLimit: '1024mb',
     },
     instrumentationHook: true,
     cpus: 2,

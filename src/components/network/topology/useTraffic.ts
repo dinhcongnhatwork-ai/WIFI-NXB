@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { Provider } from "@/lib/network/resources";
 import { networkFetch } from "../client";
 import type { TrafficSnapshot, HistoryPoint } from "./model";
-export function useTraffic(provider: Provider, scope: string) {
+export function useTraffic(provider: Provider, scope: string, enabled = true) {
   const [snapshot, setSnapshot] = useState<TrafficSnapshot | null>(null);
   const [history, setHistory] = useState<Record<string, HistoryPoint[]>>({});
   const [error, setError] = useState("");
@@ -14,6 +14,7 @@ export function useTraffic(provider: Provider, scope: string) {
     setSnapshot(null);
     setHistory({});
     setError("");
+    if (!enabled) return;
     const poll = async () => {
       if (pending || document.hidden) return;
       pending = true;
@@ -64,7 +65,7 @@ export function useTraffic(provider: Provider, scope: string) {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", visible);
     };
-  }, [provider, scope]);
+  }, [provider, scope, enabled]);
   return { snapshot, history, error };
 }
 export function useAnimationEnabled(paused: boolean) {

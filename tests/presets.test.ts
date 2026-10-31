@@ -73,7 +73,7 @@ describe('local starter templates for NXB Sự Thật', () => {
     for (const url of Array.from(urls)) expect(existsSync(path.join(process.cwd(), 'public', url)), url).toBe(true);
     for (const preset of TEMPLATE_PRESETS) {
       const serialized = JSON.stringify(createPresetDocument(preset.id));
-      expect(serialized).toContain('https://solutionai.com.vn/_next/image?url=%2Flogo.png&w=48&q=75');
+      expect(serialized).toContain('/nxb-templates/logo-nxb-su-that.png');
       expect(existsSync(path.join(process.cwd(), 'public', preset.thumbnail))).toBe(true);
     }
     for (const orientation of ['portrait', 'landscape']) {
@@ -97,16 +97,17 @@ describe('local starter templates for NXB Sự Thật', () => {
     }
   });
 
-  test('presets support vertical portrait slider ratio and portrait images on mobile', () => {
+  test('presets use contained editorial images without a tall mobile poster', () => {
     for (const preset of TEMPLATE_PRESETS) {
       const doc = createPresetDocument(preset.id);
       const mobileVariant = doc.variants.mobile;
       const slider = allNodes(mobileVariant).find(n => n.element.type === 'image_slider')!;
       const element = slider.element as unknown as { height?: string; images?: Array<{ src: string }> };
-      expect(slider.layout.height).toBe(380);
-      expect(element.height).toBe('380px');
+      expect(slider.layout.height).toBe(224);
+      expect(element.height).toBe('224px');
       for (const img of element.images || []) {
-        expect(img.src).toMatch(/-portrait\.jpg$/);
+        expect(img.src).toMatch(/\.jpg$/);
+        expect(img.src).not.toMatch(/-portrait\.jpg$/);
       }
     }
   });

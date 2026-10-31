@@ -275,7 +275,7 @@ export default function TemplatesPage() {
               className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/70 transition-colors text-left"
               onClick={() => setMenuOpen(null)}
             >
-              <Eye className="w-4 h-4 text-cyan-500" />
+              <Eye className="w-4 h-4 text-blue-600" />
               <span>Xem trước</span>
             </Link>
             <Link
@@ -432,12 +432,12 @@ export default function TemplatesPage() {
                   if (selectMode) toggleSelect(template.id);
                 }}
               >
-                <div className="aspect-video bg-blue-600 relative overflow-hidden rounded-t-xl">
+                <div className="aspect-video bg-slate-100 border-b border-slate-200 relative overflow-hidden rounded-t-xl">
                   {hasValidThumbnail ? (
                     <img src={template.thumbnail} alt={template.name} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <Palette className="w-12 h-12 text-slate-300" />
+                      <Palette className="w-12 h-12 text-slate-400" />
                     </div>
                   )}
 

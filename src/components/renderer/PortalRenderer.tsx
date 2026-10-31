@@ -45,6 +45,7 @@ export function RenderElement({
   isDesktop,
   autoPlayTrigger,
   onSimulateConnect,
+  onConnectionStart,
   portalSessionId,
 }: {
   element: TemplateElement;
@@ -55,16 +56,17 @@ export function RenderElement({
   isDesktop?: boolean;
   autoPlayTrigger?: number;
   onSimulateConnect?: () => void;
+  onConnectionStart?: () => void;
   portalSessionId?: string;
 }) {
   switch (element.type) {
-    case 'logo': return <LogoRenderer el={element} />;
+    case 'logo': return <LogoRenderer el={element} isPreview={isPreview} />;
     case 'title': return <TitleRenderer el={element} />;
     case 'description': return <DescriptionRenderer el={element} />;
     case 'image': return <ImageRenderer el={element} isDesktop={isDesktop} />;
     case 'image_slider': return <ImageSliderRenderer el={element} isDesktop={isDesktop} />;
     case 'video': return <VideoRenderer el={element} isDesktop={isDesktop} autoPlayTrigger={autoPlayTrigger} />;
-    case 'connect_button': return <ConnectButtonRenderer el={element} params={params} isPreview={isPreview} redirectUrl={redirectUrl} campaignId={campaignId} isDesktop={isDesktop} onSimulateConnect={onSimulateConnect} portalSessionId={portalSessionId} />;
+    case 'connect_button': return <ConnectButtonRenderer el={element} params={params} isPreview={isPreview} redirectUrl={redirectUrl} campaignId={campaignId} isDesktop={isDesktop} onSimulateConnect={onSimulateConnect} onConnectionStart={onConnectionStart} portalSessionId={portalSessionId} />;
     case 'spacer': return <SpacerRenderer el={element} isDesktop={isDesktop} />;
     case 'video_gate': return <VideoGateMockupRenderer el={element as VideoGateElement} isDesktop={isDesktop} />;
     case 'attendance_gate': return <AttendanceGateMockupRenderer el={element as AttendanceGateElement} isDesktop={isDesktop} />;
@@ -73,27 +75,200 @@ export function RenderElement({
   }
 }
 
-function LogoRenderer({ el }: { el: LogoElement }) {
-  if (!el.src) return null;
+export function resolveShadowStyle(shadow?: string, glowColor = 'rgba(59,130,246,0.38)'): string {
+  if (!shadow || shadow === 'none') return 'none';
+  if (shadow === 'sm' || shadow === 'soft') return '0 2px 8px rgba(0,0,0,0.12)';
+  if (shadow === 'md' || shadow === 'medium') return '0 8px 20px -4px rgba(0,0,0,0.22)';
+  if (shadow === 'lg' || shadow === 'strong') return '0 16px 36px -6px rgba(0,0,0,0.32)';
+  if (shadow === 'xl') return '0 24px 48px -8px rgba(0,0,0,0.42)';
+  if (shadow === 'glow') return `0 10px 30px -4px ${glowColor}`;
+  return 'none';
+}
+
+export function resolveBorderStyle(
+  borderStyle?: string,
+  borderWidth?: string | number,
+  borderColor?: string
+): string {
+  if (!borderStyle || borderStyle === 'none') return 'none';
+  if (borderStyle === 'glass') return '1px solid rgba(255,255,255,0.38)';
+  const widthCss =
+    typeof borderWidth === 'number'
+      ? `${borderWidth}px`
+      : borderWidth
+      ? /^\d+(\.\d+)?$/.test(String(borderWidth).trim())
+        ? `${String(borderWidth).trim()}px`
+        : String(borderWidth)
+      : '2px';
+  return `${widthCss} ${borderStyle} ${borderColor || '#ffffff'}`;
+}
+
+export function resolveTextShadow(textShadow?: string): string | undefined {
+  if (!textShadow || textShadow === 'none') return undefined;
+  if (textShadow === 'sm') return '0 1px 3px rgba(0,0,0,0.45)';
+  if (textShadow === 'md') return '0 2px 8px rgba(0,0,0,0.65)';
+  if (textShadow === 'lg') return '0 4px 16px rgba(0,0,0,0.85)';
+  if (textShadow === 'glow') return '0 0 18px rgba(59,130,246,0.8), 0 2px 6px rgba(0,0,0,0.5)';
+  return textShadow;
+}
+
+export function applyColorOpacity(color?: string, opacity?: number): string | undefined {
+  if (!color || color === 'transparent') return undefined;
+  if (opacity === undefined || opacity >= 1) return color;
+  const clean = color.trim();
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(clean)) {
+    const hex = clean.slice(1);
+    const full = hex.length === 3 ? hex.split('').map((c) => c + c).join('') : hex;
+    const r = parseInt(full.slice(0, 2), 16);
+    const g = parseInt(full.slice(2, 4), 16);
+    const b = parseInt(full.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(1, opacity))})`;
+  }
+  return color;
+}
+
+export function buildMediaFilterCss(opts: {
+  brightness?: number;
+  contrast?: number;
+  saturate?: number;
+  grayscale?: number;
+  blur?: number;
+}): string | undefined {
+  const parts: string[] = [];
+  if (opts.blur && opts.blur > 0) parts.push(`blur(${opts.blur}px)`);
+  if (opts.brightness !== undefined && opts.brightness !== 100) parts.push(`brightness(${opts.brightness}%)`);
+  if (opts.contrast !== undefined && opts.contrast !== 100) parts.push(`contrast(${opts.contrast}%)`);
+  if (opts.saturate !== undefined && opts.saturate !== 100) parts.push(`saturate(${opts.saturate}%)`);
+  if (opts.grayscale && opts.grayscale > 0) parts.push(`grayscale(${opts.grayscale}%)`);
+  return parts.length > 0 ? parts.join(' ') : undefined;
+}
+
+function LogoRenderer({ el, isPreview }: { el: LogoElement; isPreview?: boolean }) {
   const justify = el.position === 'left' ? 'flex-start' : el.position === 'right' ? 'flex-end' : 'center';
+  if (!el.src) {
+    if (!isPreview) return null;
+    return (
+      <div style={{ display: 'flex', justifyContent: justify, padding: '8px 0', width: '100%', minHeight: el.height || '64px' }}>
+        <div
+          style={{
+            width: el.width || '140px',
+            minHeight: el.height || '64px',
+            border: '2px dashed #94a3b8',
+            borderRadius: el.borderRadius || '12px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(255,255,255,0.22)',
+            color: '#334155',
+            fontSize: '12px',
+            gap: '2px',
+            backdropFilter: 'blur(4px)',
+            padding: '8px 12px',
+            boxSizing: 'border-box',
+          }}
+        >
+          <span className="font-semibold text-slate-800">🏷️ Logo</span>
+          <span style={{ fontSize: '10px', opacity: 0.8 }} className="text-slate-600">Bấm để tải ảnh</span>
+        </div>
+      </div>
+    );
+  }
+  const hasPlate = Boolean((el.bgColor && el.bgColor !== 'transparent') || el.padding || (el.shadow && el.shadow !== 'none') || el.borderColor);
+  const plateBg = applyColorOpacity(el.bgColor, el.bgOpacity);
+  const padVal = typeof el.padding === 'number' ? `${el.padding}px` : el.padding || (hasPlate ? '10px' : '0px');
   return (
-    <div style={{ display: 'flex', justifyContent: justify, padding: '12px 0' }}>
-      <img src={el.src} alt="Logo" style={{ width: el.width, height: 'auto', objectFit: 'contain' }} />
+    <div style={{ display: 'flex', justifyContent: justify, padding: '12px 0', opacity: el.opacity !== undefined ? el.opacity : 1 }}>
+      <div
+        style={
+          hasPlate
+            ? {
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: plateBg,
+                padding: padVal,
+                borderRadius: el.borderRadius || '14px',
+                boxShadow: resolveShadowStyle(el.shadow),
+                border: el.borderColor
+                  ? resolveBorderStyle('solid', el.borderWidth || 1, el.borderColor)
+                  : undefined,
+              }
+            : undefined
+        }
+      >
+        <img src={el.src} alt="Logo" style={{ width: el.width, height: 'auto', objectFit: 'contain', display: 'block' }} />
+      </div>
     </div>
   );
 }
 
+function buildTypographyStyle(
+  el: TitleElement | DescriptionElement,
+  defaults: { fontWeight: number; padding: string; align: 'left' | 'center' | 'right' | 'justify' }
+): React.CSSProperties {
+  const hasBox = Boolean(
+    (el.bgColor && el.bgColor !== 'transparent') ||
+      el.backdropBlur ||
+      el.borderColor ||
+      el.paddingX !== undefined ||
+      el.paddingY !== undefined
+  );
+  const padY = el.paddingY !== undefined ? `${el.paddingY}px` : hasBox ? '8px' : undefined;
+  const padX = el.paddingX !== undefined ? `${el.paddingX}px` : hasBox ? '14px' : undefined;
+  const style: React.CSSProperties = {
+    padding: padY || padX ? `${padY || '6px'} ${padX || '0px'}` : defaults.padding,
+    textAlign: el.align || defaults.align,
+    color: el.color,
+    fontSize: el.fontSize,
+    fontFamily: el.fontFamily || undefined,
+    fontWeight: el.fontWeight !== undefined ? el.fontWeight : defaults.fontWeight,
+    fontStyle: el.fontStyle || 'normal',
+    textDecoration: el.textDecoration && el.textDecoration !== 'none' ? el.textDecoration : undefined,
+    textTransform: el.textTransform && el.textTransform !== 'none' ? el.textTransform : undefined,
+    lineHeight: el.lineHeight !== undefined ? el.lineHeight : undefined,
+    letterSpacing:
+      typeof el.letterSpacing === 'number'
+        ? `${el.letterSpacing}px`
+        : el.letterSpacing || undefined,
+    margin: 0,
+    whiteSpace: 'pre-line',
+    backgroundColor: applyColorOpacity(el.bgColor, el.bgOpacity),
+    borderRadius: el.borderRadius || (hasBox ? '12px' : undefined),
+    backdropFilter: el.backdropBlur ? `blur(${el.backdropBlur}px)` : undefined,
+    border: el.borderColor
+      ? resolveBorderStyle('solid', el.borderWidth || 1, el.borderColor)
+      : undefined,
+  };
+  const resolvedShadow = resolveTextShadow(el.textShadow);
+  if (resolvedShadow) style.textShadow = resolvedShadow;
+  const strokeWidth =
+    el.textStrokeWidth !== undefined
+      ? `${el.textStrokeWidth}px`
+      : el.textStroke && el.textStroke !== '0px' && el.textStroke !== '0'
+      ? /^\d+(\.\d+)?$/.test(String(el.textStroke).trim())
+        ? `${String(el.textStroke).trim()}px`
+        : el.textStroke
+      : undefined;
+  if (strokeWidth) {
+    (style as Record<string, unknown>).WebkitTextStroke = `${strokeWidth} ${el.textStrokeColor || '#000000'}`;
+  }
+  if (el.textGradient) {
+    style.backgroundImage = el.textGradient;
+    style.WebkitBackgroundClip = 'text';
+    style.WebkitTextFillColor = 'transparent';
+    style.backgroundClip = 'text';
+  }
+  return style;
+}
+
 function TitleRenderer({ el }: { el: TitleElement }) {
-  const style: React.CSSProperties = { padding: '8px 0', textAlign: el.align, color: el.color, fontSize: el.fontSize, fontWeight: 700, margin: 0 };
-  if (el.textShadow) style.textShadow = el.textShadow;
-  if (el.textStroke) (style as Record<string, unknown>).WebkitTextStroke = `${el.textStroke} ${el.textStrokeColor || '#000'}`;
+  const style = buildTypographyStyle(el, { fontWeight: 700, padding: '8px 0', align: 'center' });
   return <h1 style={style}>{el.content}</h1>;
 }
 
 function DescriptionRenderer({ el }: { el: DescriptionElement }) {
-  const style: React.CSSProperties = { padding: '4px 0', textAlign: 'center', color: el.color, fontSize: el.fontSize, margin: 0 };
-  if (el.textShadow) style.textShadow = el.textShadow;
-  if (el.textStroke) (style as Record<string, unknown>).WebkitTextStroke = `${el.textStroke} ${el.textStrokeColor || '#000'}`;
+  const style = buildTypographyStyle(el, { fontWeight: 400, padding: '4px 0', align: 'center' });
   return <p style={style}>{el.content}</p>;
 }
 
@@ -114,29 +289,38 @@ function ImageRenderer({ el, isDesktop }: { el: ImageElement; isDesktop?: boolea
   const posX = el.posX || 0;
   const posY = el.posY || 0;
 
-  // Shadow preset
-  let shadowStyle = 'none';
-  if (el.shadow === 'sm') shadowStyle = '0 2px 8px rgba(0,0,0,0.12)';
-  else if (el.shadow === 'md') shadowStyle = '0 8px 20px -4px rgba(0,0,0,0.2)';
-  else if (el.shadow === 'lg') shadowStyle = '0 16px 36px -6px rgba(0,0,0,0.3)';
-  else if (el.shadow === 'glow') shadowStyle = '0 10px 30px -4px rgba(59,130,246,0.35)';
+  const shadowStyle = resolveShadowStyle(el.shadow);
+  const borderStyle = resolveBorderStyle(el.borderStyle, el.borderWidth, el.borderColor);
+  const filterCss = buildMediaFilterCss({
+    brightness: el.brightness,
+    contrast: el.contrast,
+    saturate: el.saturate,
+    grayscale: el.grayscale,
+    blur: el.blur,
+  });
 
-  // Border style
-  let borderStyle = 'none';
-  if (el.borderStyle === 'solid') {
-    borderStyle = `${el.borderWidth || '2px'} solid ${el.borderColor || '#ffffff'}`;
-  } else if (el.borderStyle === 'glass') {
-    borderStyle = '1px solid rgba(255,255,255,0.35)';
-  }
+  let effectiveRadius = el.borderRadius || '12px';
+  if (el.maskShape === 'circle' || el.maskShape === 'pill') effectiveRadius = '9999px';
+  else if (el.maskShape === 'arch') effectiveRadius = '9999px 9999px 16px 16px';
+  else if (el.maskShape === 'rect') effectiveRadius = '0px';
+
+  const effectiveAspect =
+    el.maskShape === 'circle'
+      ? '1/1'
+      : el.aspectRatio && el.aspectRatio !== 'auto'
+      ? el.aspectRatio
+      : undefined;
 
   return (
-    <div style={{ padding: '4px 0', width: '100%' }}>
+    <div style={{ padding: '4px 0', width: '100%', opacity: el.opacity !== undefined ? el.opacity : 1 }}>
       <div
         style={{
+          position: 'relative',
           overflow: 'hidden',
-          borderRadius: el.borderRadius || '12px',
+          borderRadius: effectiveRadius,
           width: el.width || '100%',
-          height: el.height === 'auto' ? 'auto' : el.height,
+          height: effectiveAspect ? 'auto' : el.height === 'auto' ? 'auto' : el.height,
+          aspectRatio: effectiveAspect,
           boxShadow: shadowStyle,
           border: borderStyle,
           transition: 'all 0.2s ease',
@@ -147,15 +331,47 @@ function ImageRenderer({ el, isDesktop }: { el: ImageElement; isDesktop?: boolea
           alt={el.alt || 'Hình ảnh'}
           style={{
             width: '100%',
-            height: el.height === 'auto' ? 'auto' : '100%',
+            height: el.height === 'auto' && !effectiveAspect ? 'auto' : '100%',
             objectFit: el.objectFit || 'cover',
             objectPosition: `calc(50% + ${posX}px) calc(50% + ${posY}px)`,
             transform: `scale(${zoom})`,
             transformOrigin: 'center',
+            filter: filterCss,
             display: 'block',
           }}
         />
+        {el.caption && el.captionPosition !== 'below' && (
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              padding: '10px 12px',
+              background: el.captionBgColor || 'linear-gradient(180deg, transparent 0%, rgba(15,23,42,0.82) 100%)',
+              color: el.captionColor || '#ffffff',
+              fontSize: '12px',
+              fontWeight: 500,
+              textAlign: 'center',
+            }}
+          >
+            {el.caption}
+          </div>
+        )}
       </div>
+      {el.caption && el.captionPosition === 'below' && (
+        <p
+          style={{
+            marginTop: '6px',
+            marginBottom: 0,
+            fontSize: '12px',
+            color: el.captionColor || '#e2e8f0',
+            textAlign: 'center',
+          }}
+        >
+          {el.caption}
+        </p>
+      )}
     </div>
   );
 }
@@ -204,17 +420,24 @@ function ImageSliderRenderer({ el, isDesktop }: { el: ImageSliderElement; isDesk
 
   const prevSlide = () => setCurrent((c) => (c - 1 + images.length) % images.length);
   const nextSlide = () => setCurrent((c) => (c + 1) % images.length);
+  const shadowStyle = resolveShadowStyle(el.shadow || 'md');
+  const borderStyle = resolveBorderStyle(el.borderStyle, el.borderWidth, el.borderColor);
+  const showArrows = el.showArrows !== false;
+  const showDots = el.showDots !== false;
+  const isSlideMode = el.transitionType === 'slide';
+  const currentImg = images[current];
 
   return (
     <div style={{ padding: '4px 0', width: '100%' }}>
       <div
-        className="group relative overflow-hidden shadow-lg"
+        className="portal-image-slider group relative overflow-hidden"
         style={{
           borderRadius: el.borderRadius || '14px',
           height,
           position: 'relative',
           touchAction: 'pan-y',
-          boxShadow: '0 12px 28px -6px rgba(0,0,0,0.25)',
+          boxShadow: shadowStyle,
+          border: borderStyle !== 'none' ? borderStyle : undefined,
         }}
         onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
         onTouchEnd={(e) => {
@@ -236,12 +459,53 @@ function ImageSliderRenderer({ el, isDesktop }: { el: ImageSliderElement; isDesk
               width: '100%',
               height: '100%',
               objectFit: el.objectFit || 'cover',
-              transition: 'opacity 0.6s ease-in-out',
-              opacity: i === current ? 1 : 0,
+              transition: isSlideMode ? 'transform 0.55s cubic-bezier(0.22,1,0.36,1), opacity 0.4s ease' : 'opacity 0.6s ease-in-out',
+              opacity: i === current ? 1 : isSlideMode ? 0.4 : 0,
+              transform: isSlideMode ? `translateX(${(i - current) * 100}%)` : undefined,
               pointerEvents: i === current ? 'auto' : 'none',
             }}
           />
         ))}
+
+        {/* Slide Caption Overlay */}
+        {el.showCaptions !== false && currentImg && (currentImg.title || currentImg.subtitle || currentImg.badge) && (
+          <div
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              padding: showDots && images.length > 1 ? '18px 14px 28px' : '14px',
+              background: 'linear-gradient(180deg, transparent 0%, rgba(15,23,42,0.85) 100%)',
+              color: '#ffffff',
+              zIndex: 2,
+              pointerEvents: 'none',
+            }}
+          >
+            {currentImg.badge && (
+              <span
+                style={{
+                  display: 'inline-block',
+                  padding: '2px 8px',
+                  borderRadius: '999px',
+                  background: '#2563eb',
+                  color: '#ffffff',
+                  fontSize: '10px',
+                  fontWeight: 700,
+                  marginBottom: '4px',
+                }}
+              >
+                {currentImg.badge}
+              </span>
+            )}
+            {currentImg.title && (
+              <div style={{ fontSize: '14px', fontWeight: 700, lineHeight: 1.25 }}>{currentImg.title}</div>
+            )}
+            {currentImg.subtitle && (
+              <div style={{ fontSize: '11px', opacity: 0.85, marginTop: '2px' }}>{currentImg.subtitle}</div>
+            )}
+          </div>
+        )}
 
         {/* Counter Badge */}
         {images.length > 1 && (
@@ -251,19 +515,19 @@ function ImageSliderRenderer({ el, isDesktop }: { el: ImageSliderElement; isDesk
         )}
 
         {/* Left / Right Navigation Controls */}
-        {images.length > 1 && (
+        {images.length > 1 && showArrows && (
           <>
             <button
               onClick={prevSlide}
-              aria-label="Previous slide"
-              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100"
+              type="button" aria-label="Ảnh trước"
+              className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-all opacity-80 group-hover:opacity-100 focus-visible:opacity-100"
             >
               ‹
             </button>
             <button
               onClick={nextSlide}
-              aria-label="Next slide"
-              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-all opacity-0 group-hover:opacity-100"
+              type="button" aria-label="Ảnh tiếp theo"
+              className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-black/40 hover:bg-black/70 text-white flex items-center justify-center backdrop-blur-sm transition-all opacity-80 group-hover:opacity-100 focus-visible:opacity-100"
             >
               ›
             </button>
@@ -271,7 +535,7 @@ function ImageSliderRenderer({ el, isDesktop }: { el: ImageSliderElement; isDesk
         )}
 
         {/* Dot Indicators */}
-        {images.length > 1 && (
+        {images.length > 1 && showDots && (
           <div
             style={{
               position: 'absolute',
@@ -289,19 +553,15 @@ function ImageSliderRenderer({ el, isDesktop }: { el: ImageSliderElement; isDesk
           >
             {images.map((_, i) => (
               <button
+                type="button"
                 key={i}
+                aria-label={`Xem ảnh ${i + 1}`}
+                aria-pressed={i === current}
                 onClick={() => setCurrent(i)}
-                style={{
-                  width: i === current ? '18px' : '6px',
-                  height: '6px',
-                  borderRadius: '3px',
-                  background: i === current ? '#ffffff' : 'rgba(255,255,255,0.45)',
-                  border: 'none',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  padding: 0,
-                }}
-              />
+                style={{ width: 28, height: 28, border: 0, background: 'transparent', cursor: 'pointer', padding: 0, display: 'grid', placeItems: 'center' }}
+              >
+                <span aria-hidden="true" style={{ display: 'block', width: i === current ? 18 : 6, height: 6, borderRadius: 3, background: i === current ? '#ffffff' : 'rgba(255,255,255,0.65)' }} />
+              </button>
             ))}
           </div>
         )}
@@ -321,12 +581,8 @@ function VideoRenderer({ el, isDesktop, autoPlayTrigger }: { el: VideoElement; i
   };
   const frameWidth = isDesktop ? (el.frameWidthDesktop || el.frameWidth || '100%') : (el.frameWidth || '100%');
 
-  // Shadow preset
-  let shadowStyle = '0 10px 25px -5px rgba(0,0,0,0.25)';
-  if (el.shadow === 'sm') shadowStyle = '0 2px 8px rgba(0,0,0,0.15)';
-  else if (el.shadow === 'md') shadowStyle = '0 8px 20px -4px rgba(0,0,0,0.25)';
-  else if (el.shadow === 'lg') shadowStyle = '0 20px 40px -8px rgba(0,0,0,0.35)';
-  else if (el.shadow === 'glow') shadowStyle = '0 10px 30px -4px rgba(59,130,246,0.4)';
+  const shadowStyle = resolveShadowStyle(el.shadow || 'md');
+  const borderStyle = resolveBorderStyle(el.borderStyle, el.borderWidth, el.borderColor);
 
   // Programmatically trigger autoplay when all overlays are gone
   useEffect(() => {
@@ -380,12 +636,12 @@ function VideoRenderer({ el, isDesktop, autoPlayTrigger }: { el: VideoElement; i
         style={{
           width: isVertical ? (isDesktop ? 'min(300px, 100%)' : 'min(260px, 90%)') : frameWidth,
           maxWidth: '100%',
-          borderRadius: '14px',
+          borderRadius: el.borderRadius || '14px',
           overflow: 'hidden',
           aspectRatio: aspectMap[el.aspectRatio || 'auto'] || 'auto',
           background: '#090d16',
           boxShadow: shadowStyle,
-          border: '1px solid rgba(255,255,255,0.1)',
+          border: borderStyle !== 'none' ? borderStyle : '1px solid rgba(255,255,255,0.1)',
         }}
       >
         <video
@@ -898,6 +1154,7 @@ function ConnectButtonRenderer({
   campaignId,
   isDesktop,
   onSimulateConnect,
+  onConnectionStart,
   portalSessionId,
 }: {
   el: ConnectButtonElement;
@@ -907,17 +1164,24 @@ function ConnectButtonRenderer({
   campaignId?: string;
   isDesktop?: boolean;
   onSimulateConnect?: () => void;
+  onConnectionStart?: () => void;
   portalSessionId?: string;
 }) {
   const [phone, setPhone] = useState('');
+  const [confirmed, setConfirmed] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
+  const pendingConnect = useRef(false);
+  useEffect(() => setImageFailed(false), [el.imageSrc]);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const buttonWidth = isDesktop ? (el.buttonWidthDesktop || el.buttonWidth || '100%') : (el.buttonWidth || '100%');
 
   const handleConnect = () => {
+    if (el.requireConfirm && !confirmed) return;
     if (onSimulateConnect) { onSimulateConnect(); return; }
-    if (isPreview || submitting) return;
+    if (isPreview || submitting || pendingConnect.current) return;
+    pendingConnect.current = true;
 
     setErrorMessage('');
     setSubmitting(true);
@@ -946,6 +1210,8 @@ function ConnectButtonRenderer({
       if (mac) connectUrl.searchParams.set('mac', mac);
       if (ip) connectUrl.searchParams.set('ip', ip);
       if (ssid) connectUrl.searchParams.set('ssid', ssid);
+      if (params.apMac) connectUrl.searchParams.set('apMac', params.apMac);
+      if (params.unifiSite) connectUrl.searchParams.set('unifiSite', params.unifiSite);
       if (phone) connectUrl.searchParams.set('phone', phone);
       if (trial) connectUrl.searchParams.set('trial', trial);
       if (linkLogin) connectUrl.searchParams.set('link-login', linkLogin);
@@ -953,48 +1219,77 @@ function ConnectButtonRenderer({
       if (campaignId) connectUrl.searchParams.set('campaignId', campaignId);
       if (portalSessionId) connectUrl.searchParams.set('portalSessionId', portalSessionId);
 
+      onConnectionStart?.();
       setSubmitted(true);
       window.location.href = connectUrl.toString();
     } catch (err) {
       console.error('Lỗi kết nối:', err);
       setErrorMessage('Không thể kết nối. Vui lòng thử lại.');
+      pendingConnect.current = false;
       setSubmitting(false);
     }
   };
 
   if (submitted) {
     return (
-      <div style={{ padding: '12px 0', textAlign: 'center' }}>
-        <p style={{ fontSize: '18px', fontWeight: 600, color: '#22c55e' }}>✅ Đã kết nối thành công!</p>
-        <p style={{ fontSize: '13px', color: 'rgba(255,255,255,0.7)', marginTop: '4px' }}>Đang chuyển hướng...</p>
+      <div role="status" aria-live="polite" style={{ padding: '12px 0', textAlign: 'center', color: 'inherit' }}>
+        <p style={{ fontSize: '15px', fontWeight: 600 }}>Đang xử lý kết nối WiFi…</p>
+        <p style={{ fontSize: '13px', marginTop: '4px' }}>Vui lòng đợi chuyển hướng.</p>
       </div>
     );
   }
 
   // Button background & borders
   let buttonBg = el.bgColor || '#2563eb';
-  let buttonBorder = 'none';
+  let buttonBorder = el.borderColor
+    ? resolveBorderStyle('solid', el.borderWidth || 1, el.borderColor)
+    : 'none';
   let textColor = el.color || '#ffffff';
 
   if (el.buttonStyle === 'gradient') {
-    buttonBg = el.gradient || `linear-gradient(135deg, ${el.bgColor || '#2563eb'} 0%, #4f46e5 100%)`;
+    if (typeof el.gradient === 'string' && el.gradient.trim()) {
+      buttonBg = el.gradient;
+    } else if (el.gradient && typeof el.gradient === 'object' && el.gradient.css?.trim()) {
+      buttonBg = el.gradient.css;
+    } else if (el.gradient && typeof el.gradient === 'object') {
+      const from = el.gradient.from || el.bgColor || '#2563eb';
+      const to = el.gradient.to || '#1d4ed8';
+      const angle = el.gradient.angle ?? 135;
+      buttonBg = el.gradient.via
+        ? `linear-gradient(${angle}deg, ${from} 0%, ${el.gradient.via} 50%, ${to} 100%)`
+        : `linear-gradient(${angle}deg, ${from} 0%, ${to} 100%)`;
+    } else {
+      buttonBg = `linear-gradient(135deg, ${el.bgColor || '#2563eb'} 0%, #1d4ed8 100%)`;
+    }
   } else if (el.buttonStyle === 'glass') {
     buttonBg = 'rgba(255, 255, 255, 0.22)';
-    buttonBorder = '1px solid rgba(255, 255, 255, 0.45)';
+    buttonBorder = el.borderColor
+      ? resolveBorderStyle('solid', el.borderWidth || 1, el.borderColor)
+      : '1px solid rgba(255, 255, 255, 0.45)';
     textColor = el.color || '#ffffff';
   } else if (el.buttonStyle === 'outline') {
     buttonBg = 'transparent';
-    buttonBorder = `2px solid ${el.bgColor || '#2563eb'}`;
-    textColor = el.bgColor || '#2563eb';
+    buttonBorder = `${typeof el.borderWidth === 'number' ? `${el.borderWidth}px` : el.borderWidth || '2px'} solid ${el.borderColor || el.bgColor || '#2563eb'}`;
+    textColor = el.color || el.bgColor || '#2563eb';
   }
 
   // Shadow preset
-  let buttonShadow = '0 6px 18px -2px rgba(37,99,235,0.3)';
-  if (el.shadow === 'none') buttonShadow = 'none';
-  else if (el.shadow === 'sm') buttonShadow = '0 2px 8px rgba(0,0,0,0.15)';
-  else if (el.shadow === 'md') buttonShadow = '0 6px 18px -2px rgba(0,0,0,0.22)';
-  else if (el.shadow === 'lg') buttonShadow = '0 12px 28px -4px rgba(0,0,0,0.35)';
-  else if (el.shadow === 'glow') buttonShadow = `0 8px 24px -2px ${el.bgColor || '#2563eb'}70`;
+  let buttonShadow = resolveShadowStyle(el.shadow || 'md', applyColorOpacity(el.bgColor || '#2563eb', 0.44));
+  if (el.buttonEffect === 'glow') {
+    buttonShadow = `0 0 16px 1px ${applyColorOpacity(el.bgColor || '#2563eb', 0.4)}, ${buttonShadow !== 'none' ? buttonShadow : '0 4px 14px rgba(0,0,0,0.15)'}`;
+  } else if (el.buttonEffect === 'lift') {
+    buttonShadow = `0 4px 0 rgba(15,23,42,0.35), ${buttonShadow !== 'none' ? buttonShadow : '0 8px 20px rgba(0,0,0,0.22)'}`;
+  }
+
+  const padY = typeof el.paddingY === 'number' ? `${el.paddingY}px` : el.paddingY || '14px';
+  const btnFontStyle: React.CSSProperties = {
+    fontFamily: el.fontFamily || undefined,
+    fontSize: el.fontSize || '16px',
+    fontWeight: el.fontWeight !== undefined ? el.fontWeight : 600,
+    fontStyle: el.fontStyle || 'normal',
+    textTransform: el.textTransform && el.textTransform !== 'none' ? el.textTransform : undefined,
+    letterSpacing: typeof el.letterSpacing === 'number' ? `${el.letterSpacing}px` : el.letterSpacing || undefined,
+  };
 
   // Render Icon
   const renderIcon = () => {
@@ -1064,110 +1359,57 @@ function ConnectButtonRenderer({
         )}
 
         {/* Custom Image Button or CSS Button */}
-        {el.imageSrc ? (
-          <div style={{ width: '100%' }}>
-            <img
-              src={el.imageSrc}
-              alt={el.text}
-              onClick={handleConnect}
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-                const fallback = e.currentTarget.nextSibling as HTMLElement;
-                if (fallback) fallback.style.display = 'flex';
-              }}
-              style={{
-                width: isDesktop ? (el.imageWidthDesktop || el.imageWidth || '100%') : (el.imageWidth || '100%'),
-                maxWidth: '100%',
-                borderRadius: el.radius || '12px',
-                cursor: 'pointer',
-                display: 'block',
-                opacity: submitting ? 0.6 : 1,
-                margin: '0 auto',
-                boxShadow: buttonShadow,
-                transition: 'transform 0.15s ease',
-              }}
-            />
-            <button
-              onClick={handleConnect}
-              disabled={submitting}
-              style={{
-                display: 'none',
-                width: '100%',
-                padding: '14px 20px',
-                background: buttonBg,
-                color: textColor,
-                border: buttonBorder,
-                borderRadius: el.radius || '12px',
-                fontSize: '16px',
-                fontWeight: 600,
-                cursor: 'pointer',
-                boxShadow: buttonShadow,
-              }}
-            >
-              {submitting ? 'Đang kết nối...' : el.text}
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={handleConnect}
-            disabled={submitting}
-            style={{
-              position: 'relative',
-              overflow: 'hidden',
-              width: '100%',
-              padding: '14px 20px',
-              background: buttonBg,
-              color: textColor,
-              border: buttonBorder,
-              borderRadius: el.radius || '12px',
-              fontSize: '16px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              opacity: submitting ? 0.6 : 1,
-              boxShadow: buttonShadow,
-              backdropFilter: el.buttonStyle === 'glass' ? 'blur(12px)' : undefined,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-            }}
-          >
-            {/* Shimmer light sweep */}
-            {el.buttonEffect === 'shimmer' && (
-              <span
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  background: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent)',
-                  transform: 'translateX(-100%)',
-                  animation: 'shimmer 2.2s infinite',
-                }}
-              />
-            )}
+        <button
+          type="button"
+          className="portal-connect-button"
+          data-effect={isPreview && !onSimulateConnect ? 'none' : el.buttonEffect || 'none'}
+          onClick={handleConnect}
+          disabled={submitting || (!!el.requireConfirm && !confirmed)}
+          aria-busy={submitting}
+          aria-label={el.text || 'Kết nối ngay'}
+          style={{
+            position: 'relative', overflow: 'hidden', width: '100%', minHeight: 44,
+            padding: el.imageSrc && !imageFailed ? 0 : `${padY} 20px`,
+            background: buttonBg, color: textColor, border: buttonBorder,
+            borderRadius: el.radius || '8px', ...btnFontStyle,
+            cursor: submitting ? 'wait' : 'pointer',
+            opacity: submitting || (el.requireConfirm && !confirmed) ? 0.6 : 1,
+            boxShadow: buttonShadow,
+            backdropFilter: el.buttonStyle === 'glass' ? 'blur(12px)' : undefined,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+          }}
+        >
+          {el.imageSrc && !imageFailed ? <img src={el.imageSrc} alt="" onError={() => setImageFailed(true)} style={{width: isDesktop ? (el.imageWidthDesktop || el.imageWidth || '100%') : (el.imageWidth || '100%'), maxWidth:'100%', display:'block', borderRadius:'inherit'}} /> : <>
+            {el.buttonEffect === 'shimmer' && <span aria-hidden="true" className="portal-connect-shimmer" />}
             {el.buttonIcon !== 'arrow' && renderIcon()}
-            <span>{submitting ? 'Đang kết nối WiFi...' : el.text || 'Kết nối ngay'}</span>
+            <span style={{position:'relative'}}>{submitting ? 'Đang kết nối WiFi…' : el.text || 'Kết nối ngay'}</span>
             {el.buttonIcon === 'arrow' && renderIcon()}
-          </button>
-        )}
+          </>}
+        </button>
+        {el.requireConfirm && <label style={{display:'flex', gap:8, alignItems:'flex-start', marginTop:12, fontSize:13, lineHeight:1.5, color:'inherit', cursor:'pointer'}}>
+          <input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} style={{marginTop:3, width:16, height:16, flexShrink:0}} />
+          <span>Tôi đồng ý với {el.termsText || 'điều khoản truy cập WiFi.'}</span>
+        </label>}
 
         {/* Terms of service disclaimer text */}
-        {el.termsText && (
+        {el.termsText && !el.requireConfirm && (
           <p
             style={{
               fontSize: '11px',
-              color: 'rgba(255, 255, 255, 0.85)',
+              color: 'inherit',
               textAlign: 'center',
               marginTop: '8px',
               lineHeight: 1.4,
-              textShadow: '0 1px 2px rgba(0,0,0,0.4)',
+              opacity: 0.85,
             }}
           >
-            🔒 {el.termsText}
+            {el.termsText}
           </p>
         )}
 
         {errorMessage && (
-          <p style={{ fontSize: '12px', color: '#fecaca', textAlign: 'center', marginTop: '8px' }}>
+          <p role="alert" style={{ fontSize: '12px', color: '#b91c1c', textAlign: 'center', marginTop: '8px' }}>
             {errorMessage}
           </p>
         )}

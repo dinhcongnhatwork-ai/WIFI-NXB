@@ -30,6 +30,7 @@ import {
   Square,
   Columns,
   UserCheck,
+  GripVertical,
 } from 'lucide-react';
 import {
   type TemplateDocumentV2,
@@ -43,6 +44,8 @@ import {
   type ScreenId,
   screenSurface,
   flattenNodes,
+  nodeSiblings,
+  findNode,
 } from '@/lib/template-document';
 import { MediaLibrary } from '@/components/media';
 import type { MediaItem } from '@/components/media/MediaPicker';
@@ -54,8 +57,9 @@ interface CmsLeftSidebarProps {
   onAddMedia?: (url: string, item?: MediaItem) => void;
   onAddSlides?: (items: MediaItem[]) => void;
   selectedNodeId: string | null;
+  selectedNodeIds?: string[];
   selectedSectionId: string | null;
-  onSelectNode: (nodeId: string | null, sectionId?: string | null) => void;
+  onSelectNode: (nodeId: string | null, sectionId?: string | null, multi?: boolean) => void;
   onSelectSection: (sectionId: string | null) => void;
   onAddNode: (type: NodeElement['type'], sectionId?: string) => void;
   onAddSection: (mode: 'flow' | 'freeform') => void;
@@ -64,6 +68,7 @@ interface CmsLeftSidebarProps {
   onToggleLockNode: (sectionId: string, nodeId: string) => void;
   onToggleHideNode: (sectionId: string, nodeId: string) => void;
   onMoveNode: (sectionId: string, nodeId: string, direction: 'up' | 'down') => void;
+  onReorderNode?: (sectionId: string, sourceNodeId: string, targetNodeId: string, position: 'before' | 'after') => void;
   onDeleteSection: (sectionId: string) => void;
   onMoveSection: (sectionId: string, direction: 'up' | 'down') => void;
   onRenameNode: (sectionId: string, nodeId: string, newName: string) => void;
@@ -78,6 +83,7 @@ export default function CmsLeftSidebar({
   onAddMedia,
   onAddSlides,
   selectedNodeId,
+  selectedNodeIds = [],
   selectedSectionId,
   onSelectNode,
   onSelectSection,
@@ -88,6 +94,7 @@ export default function CmsLeftSidebar({
   onToggleLockNode,
   onToggleHideNode,
   onMoveNode,
+  onReorderNode,
   onDeleteSection,
   onMoveSection,
   onRenameNode,
@@ -98,8 +105,13 @@ export default function CmsLeftSidebar({
   const [componentSearch, setComponentSearch] = useState('');
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [draggedNodeId, setDraggedNodeId] = useState<string | null>(null);
+  const [dragOverNodeId, setDragOverNodeId] = useState<string | null>(null);
+  const [dropPosition, setDropPosition] = useState<'before' | 'after' | null>(null);
 
   const activeVariant = screenSurface(document.variants[device], screen);
+  const selectedSection = activeVariant.sections.find(s => s.id === selectedSectionId) || activeVariant.sections.find(s => !!findNode(s.nodes, selectedNodeId || ''));
+  const selectedNode = selectedSection && selectedNodeId ? findNode(selectedSection.nodes, selectedNodeId) : null;
 
   const componentCategories: {
     category: string;
@@ -133,9 +145,9 @@ export default function CmsLeftSidebar({
     {
       category: 'Cấu trúc & Trang trí',
       items: [
-        { type: 'container', label: 'Container', icon: Box, desc: 'Khối hộp chứa các phần tử' },
-        { type: 'spacer', label: 'Khoảng trắng', icon: Square, desc: 'Khoảng cách đệm giữa các mục' },
-        { type: 'divider', label: 'Đường phân cách', icon: Minus, desc: 'Đường kẻ mảnh phân đoạn' },
+        { type: 'container', label: 'Thẻ nền (Khung chứa)', icon: Box, desc: 'Khung mờ bo góc gom nhóm các phần tử' },
+        { type: 'spacer', label: 'Khoảng trống', icon: Square, desc: 'Khoảng cách đệm giữa các mục' },
+        { type: 'divider', label: 'Đường kẻ phân đoạn', icon: Minus, desc: 'Đường phân cách mảnh tinh tế' },
         { type: 'shape', label: 'Hình khối', icon: Columns, desc: 'Khối màu trang trí bo góc' },
       ],
     },
@@ -153,10 +165,10 @@ export default function CmsLeftSidebar({
 
   if (isCollapsed) {
     return (
-      <aside className="w-12 bg-white border-r border-gray-200 flex flex-col items-center py-3 z-30 shrink-0 select-none">
+      <aside className="w-12 bg-white border-r border-slate-200 flex flex-col items-center py-3 z-30 shrink-0 select-none">
         <button
           onClick={() => setIsCollapsed(false)}
-          className="p-2 rounded-lg text-gray-400 hover:text-gray-900 hover:bg-gray-100 mb-4 transition-colors"
+          className="p-2 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 mb-4 transition-colors"
           title="Mở rộng panel"
         >
           <ChevronRight className="w-4 h-4" />
@@ -170,7 +182,7 @@ export default function CmsLeftSidebar({
             className={`p-2 rounded-lg transition-colors ${
               activeTab === 'components'
                 ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
+                : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'
             }`}
             title="Thư viện thành phần"
           >
@@ -184,7 +196,7 @@ export default function CmsLeftSidebar({
             className={`p-2 rounded-lg transition-colors ${
               activeTab === 'layers'
                 ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
+                : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'
             }`}
             title="Cây lớp"
           >
@@ -198,7 +210,7 @@ export default function CmsLeftSidebar({
             className={`p-2 rounded-lg transition-colors ${
               activeTab === 'media'
                 ? 'bg-blue-600 text-white'
-                : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
+                : 'text-slate-400 hover:text-slate-900 hover:bg-slate-100'
             }`}
             title="Thư viện Media"
           >
@@ -210,16 +222,16 @@ export default function CmsLeftSidebar({
   }
 
   return (
-    <aside className="w-[248px] bg-white border-r border-gray-200 flex flex-col z-30 shrink-0 select-none text-gray-700">
+    <aside aria-label="Thành phần và tài nguyên" className="cms-library-panel w-[280px] bg-white border-r border-slate-200 flex flex-col z-30 shrink-0 select-none text-slate-700">
       {/* Tabs Header */}
-      <div className="h-12 border-b border-gray-200 px-3 flex items-center justify-between">
-        <div className="flex items-center gap-1 bg-gray-50 p-1 rounded-xl border border-gray-200/80">
+      <div className="h-12 border-b border-slate-200 px-2 flex items-center justify-between gap-1">
+        <div className="flex min-w-0 items-center gap-0.5">
           <button
             onClick={() => setActiveTab('components')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
               activeTab === 'components'
                 ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             <Component className="w-3.5 h-3.5" />
@@ -227,21 +239,21 @@ export default function CmsLeftSidebar({
           </button>
           <button
             onClick={() => setActiveTab('layers')}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-colors ${
+            className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium transition-colors ${
               activeTab === 'layers'
                 ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Lớp ({activeVariant.sections.flatMap((s) => s.nodes).length})</span>
+            <span>Lớp ({activeVariant.sections.flatMap((s) => flattenNodes(s.nodes)).length})</span>
           </button>
           <button
             onClick={() => setActiveTab('media')}
             className={`p-1.5 rounded-lg text-xs transition-colors ${
               activeTab === 'media'
                 ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
+                : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
             }`}
             title="Thư viện media"
           >
@@ -250,7 +262,7 @@ export default function CmsLeftSidebar({
         </div>
         <button
           onClick={() => setIsCollapsed(true)}
-          className="p-1 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+          className="p-1 text-slate-400 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
           title="Thu gọn panel"
         >
           <ChevronLeft className="w-4 h-4" />
@@ -261,34 +273,37 @@ export default function CmsLeftSidebar({
       {activeTab === 'components' && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Search bar */}
-          <div className="p-3 border-b border-gray-200/80">
+          <div className="p-3 border-b border-slate-200/80">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 text-gray-500 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 placeholder="Tìm thành phần..."
                 value={componentSearch}
                 onChange={(e) => setComponentSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs text-gray-700 placeholder:text-gray-500 outline-none focus:border-blue-500"
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-700 placeholder:text-slate-500 outline-none focus:border-blue-500"
               />
             </div>
           </div>
 
-          {/* Quick Add Section buttons */}
-          <div className="px-3 pt-3 pb-2 flex gap-2">
+          {/* Target Location Indicator */}
+          <div className="px-3 py-2 bg-blue-50/70 border-b border-blue-100 text-[11px] text-blue-900 flex items-center gap-1.5 select-none">
+            <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+            <span className="truncate">
+              Sẽ thêm vào: <strong>{selectedSection ? selectedSection.name : activeVariant.sections[0]?.name || 'Khối 1'}</strong>
+              {selectedNode ? ` (sau "${selectedNode.name}")` : ''}
+            </span>
+          </div>
+
+          {/* Quick Add Section button */}
+          <div className="px-3 pt-2.5 pb-1">
             <button
               onClick={() => onAddSection('flow')}
-              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-gray-100 hover:bg-gray-200 active:scale-[0.98] rounded-xl text-xs text-gray-700 border border-gray-300 transition-colors"
+              className="w-full flex items-center justify-center gap-1.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold transition-colors shadow-xs"
+              title="Thêm khối nội dung responsive tự động căn chỉnh"
             >
-              <Plus className="w-3.5 h-3.5 text-blue-400" />
-              <span>Section co giãn</span>
-            </button>
-            <button
-              onClick={() => onAddSection('freeform')}
-              className="flex-1 flex items-center justify-center gap-1 py-1.5 bg-gray-100 hover:bg-gray-200 active:scale-[0.98] rounded-xl text-xs text-gray-700 border border-gray-300 transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Section tự do</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>+ Thêm khối nội dung</span>
             </button>
           </div>
 
@@ -296,25 +311,26 @@ export default function CmsLeftSidebar({
           <div className="flex-1 overflow-y-auto p-3 space-y-4">
             {filteredCategories.map((group) => (
               <div key={group.category}>
-                <h4 className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 px-1">
+                <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-1">
                   {group.category}
                 </h4>
                 <div className="grid grid-cols-1 gap-1.5">
                   {group.items.map(({ type, label, icon: Icon, desc }) => (
                     <button
+                      title={desc}
                       key={type}
                       onClick={() => onAddNode(type)}
-                      className="group flex items-start gap-3 p-2.5 rounded-xl bg-gray-50 hover:bg-gray-100 border border-gray-200/80 hover:border-gray-300 text-left transition-all active:scale-[0.99]"
+                      className="group flex items-center gap-2.5 p-2 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200 text-left transition-all active:scale-[0.99]"
                     >
-                      <div className="p-2 rounded-lg bg-white border border-gray-300/50 group-hover:border-blue-500/50 group-hover:text-blue-400 transition-colors shrink-0">
+                      <div className="p-1.5 rounded-md bg-slate-50 border border-slate-200 group-hover:border-blue-500/50 group-hover:text-blue-600 transition-colors shrink-0">
                         <Icon className="w-4 h-4" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium text-gray-700 group-hover:text-gray-900 flex items-center justify-between">
+                        <div className="text-xs font-medium text-slate-700 group-hover:text-slate-900 flex items-center justify-between">
                           <span>{label}</span>
-                          <Plus className="w-3 h-3 text-gray-500 group-hover:text-blue-400 transition-colors opacity-0 group-hover:opacity-100" />
+                          <Plus className="w-3 h-3 text-slate-500 group-hover:text-blue-600 transition-colors opacity-0 group-hover:opacity-100" />
                         </div>
-                        <p className="text-[10px] text-gray-500 truncate mt-0.5">{desc}</p>
+                        <p className="cms-component-description text-[11px] text-slate-500 truncate mt-0.5">{desc}</p>
                       </div>
                     </button>
                   ))}
@@ -329,11 +345,11 @@ export default function CmsLeftSidebar({
       {activeTab === 'layers' && (
         <div className="flex-1 overflow-y-auto p-3 space-y-3">
           {activeVariant.sections.length === 0 ? (
-            <div className="text-center py-8 text-gray-500 text-xs">
+            <div className="text-center py-8 text-slate-500 text-xs">
               <p>Chưa có section nào.</p>
               <button
                 onClick={() => onAddSection('flow')}
-                className="mt-2 text-blue-400 hover:underline"
+                className="mt-2 text-blue-600 hover:underline"
               >
                 + Thêm section mới
               </button>
@@ -347,8 +363,8 @@ export default function CmsLeftSidebar({
                   key={section.id}
                   className={`rounded-xl border transition-all ${
                     isSectionSelected
-                      ? 'border-blue-500/50 bg-gray-50'
-                      : 'border-gray-200 bg-white/80'
+                      ? 'border-blue-500/50 bg-slate-50'
+                      : 'border-slate-200 bg-white/80'
                   }`}
                 >
                   {/* Section Bar */}
@@ -357,10 +373,10 @@ export default function CmsLeftSidebar({
                       onSelectNode(null, null);
                       onSelectSection(section.id);
                     }}
-                    className="flex items-center justify-between p-2 cursor-pointer hover:bg-gray-100/40 rounded-t-xl"
+                    className="flex items-center justify-between p-2 cursor-pointer hover:bg-slate-100/40 rounded-t-xl"
                   >
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-xs font-semibold text-gray-900 truncate">
+                      <span className="text-xs font-semibold text-slate-900 truncate">
                         {section.name || `Section ${sIndex + 1}`}
                       </span>
                       <span
@@ -378,7 +394,7 @@ export default function CmsLeftSidebar({
                       <button
                         onClick={() => onMoveSection(section.id, 'up')}
                         disabled={sIndex === 0}
-                        className="p-1 text-gray-400 hover:text-gray-900 disabled:opacity-20"
+                        className="p-1 text-slate-400 hover:text-slate-900 disabled:opacity-20"
                         title="Di chuyển lên"
                       >
                         <ChevronUp className="w-3.5 h-3.5" />
@@ -386,14 +402,14 @@ export default function CmsLeftSidebar({
                       <button
                         onClick={() => onMoveSection(section.id, 'down')}
                         disabled={sIndex === activeVariant.sections.length - 1}
-                        className="p-1 text-gray-400 hover:text-gray-900 disabled:opacity-20"
+                        className="p-1 text-slate-400 hover:text-slate-900 disabled:opacity-20"
                         title="Di chuyển xuống"
                       >
                         <ChevronDown className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => onDeleteSection(section.id)}
-                        className="p-1 text-gray-400 hover:text-rose-500"
+                        className="p-1 text-slate-400 hover:text-rose-500"
                         title="Xóa section"
                       >
                         <Trash2 className="w-3 h-3" />
@@ -402,29 +418,83 @@ export default function CmsLeftSidebar({
                   </div>
 
                   {/* Section Nodes */}
-                  <div className="p-1.5 space-y-1 border-t border-gray-200/60">
+                  <div className="p-1.5 space-y-1 border-t border-slate-200/60">
                     {section.nodes.length === 0 ? (
-                      <p className="text-[11px] text-gray-500 italic p-1.5 text-center">
+                      <p className="text-[11px] text-slate-500 italic p-1.5 text-center">
                         Trống. Nhấn + ở tab Thành phần để thêm.
                       </p>
                     ) : (
-                      flattenNodes(section.nodes).map((node: DesignNode, nIndex: number) => {
-                        const isNodeSelected = node.id === selectedNodeId;
+                      flattenNodes(section.nodes).map((node: DesignNode) => {
+                        const siblings = nodeSiblings(section.nodes, node.id) || [];
+                        const nodeIndex = siblings.indexOf(node);
+                        const isNodeSelected = (selectedNodeIds && selectedNodeIds.includes(node.id)) || node.id === selectedNodeId;
+                        const isDragging = draggedNodeId === node.id;
+                        const isOver = dragOverNodeId === node.id;
 
                         return (
                           <div
                             key={node.id}
+                            data-layer-node-id={node.id}
+                            draggable={!node.locked}
+                            onDragStart={(e) => {
+                              if (node.locked) return;
+                              e.dataTransfer.setData('text/plain', node.id);
+                              e.dataTransfer.effectAllowed = 'move';
+                              setDraggedNodeId(node.id);
+                            }}
+                            onDragOver={(e) => {
+                              if (node.locked || draggedNodeId === node.id) return;
+                              e.preventDefault();
+                              e.dataTransfer.dropEffect = 'move';
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              const isTop = e.clientY - rect.top < rect.height / 2;
+                              setDragOverNodeId(node.id);
+                              setDropPosition(isTop ? 'before' : 'after');
+                            }}
+                            onDragLeave={() => {
+                              if (dragOverNodeId === node.id) {
+                                setDragOverNodeId(null);
+                                setDropPosition(null);
+                              }
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              if (draggedNodeId && draggedNodeId !== node.id && onReorderNode) {
+                                onReorderNode(section.id, draggedNodeId, node.id, dropPosition || 'after');
+                              }
+                              setDraggedNodeId(null);
+                              setDragOverNodeId(null);
+                              setDropPosition(null);
+                            }}
+                            onDragEnd={() => {
+                              setDraggedNodeId(null);
+                              setDragOverNodeId(null);
+                              setDropPosition(null);
+                            }}
                             onClick={(e) => {
                               e.stopPropagation();
-                              onSelectNode(node.id, section.id);
+                              onSelectNode(node.id, section.id, e.ctrlKey || e.metaKey || e.shiftKey);
                             }}
-                            className={`group flex items-center justify-between px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all ${
+                            className={`group relative flex items-center justify-between px-2 py-1.5 rounded-lg text-xs cursor-pointer transition-all ${
+                              isDragging ? 'opacity-40 border border-dashed border-blue-400' : ''
+                            } ${
+                              isOver && dropPosition === 'before' ? 'border-t-2 border-blue-500' : ''
+                            } ${
+                              isOver && dropPosition === 'after' ? 'border-b-2 border-blue-500' : ''
+                            } ${
                               isNodeSelected
-                                ? 'bg-blue-600 text-white font-medium'
-                                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                                ? 'bg-blue-600 text-white font-medium shadow-2xs'
+                                : 'text-slate-700 hover:bg-slate-100'
                             }`}
                           >
                             <div className="flex items-center gap-1.5 truncate flex-1 min-w-0">
+                              <span title="Giữ chuột và kéo để thay đổi thứ tự lớp" className="flex items-center">
+                                <GripVertical
+                                  className={`w-3.5 h-3.5 shrink-0 cursor-grab active:cursor-grabbing ${
+                                    isNodeSelected ? 'text-blue-200' : 'text-slate-400 group-hover:text-slate-600'
+                                  }`}
+                                />
+                              </span>
                               {editingNodeId === node.id ? (
                                 <input
                                   type="text"
@@ -447,12 +517,12 @@ export default function CmsLeftSidebar({
                                       setEditingNodeId(null);
                                     }
                                   }}
-                                  className="bg-white px-1 py-0.5 rounded text-xs border border-blue-400 text-gray-900 outline-none w-28"
+                                  className="bg-white px-1 py-0.5 rounded text-xs border border-blue-400 text-slate-900 outline-none w-28"
                                   onClick={(e) => e.stopPropagation()}
                                 />
                               ) : (
                                 <span
-                                  className="truncate"
+                                  className="truncate select-none"
                                   onDoubleClick={() => {
                                     setEditingNodeId(node.id);
                                     setEditingName(node.name);
@@ -471,52 +541,52 @@ export default function CmsLeftSidebar({
                             >
                               <button
                                 onClick={() => onMoveNode(section.id, node.id, 'up')}
-                                disabled={nIndex === 0}
-                                className="p-0.5 hover:text-gray-900 disabled:opacity-20"
+                                disabled={nodeIndex === 0 || node.locked}
+                                className="p-0.5 hover:text-slate-900 disabled:opacity-20"
                                 title="Lên trên"
                               >
                                 <ChevronUp className="w-3 h-3" />
                               </button>
                               <button
                                 onClick={() => onMoveNode(section.id, node.id, 'down')}
-                                disabled={nIndex === section.nodes.length - 1}
-                                className="p-0.5 hover:text-gray-900 disabled:opacity-20"
+                                disabled={nodeIndex === siblings.length - 1 || node.locked}
+                                className="p-0.5 hover:text-slate-900 disabled:opacity-20"
                                 title="Xuống dưới"
                               >
                                 <ChevronDown className="w-3 h-3" />
                               </button>
                               <button
                                 onClick={() => onToggleLockNode(section.id, node.id)}
-                                className="p-0.5 hover:text-gray-900"
+                                className="p-0.5 hover:text-slate-900"
                                 title={node.locked ? 'Mở khóa' : 'Khóa'}
                               >
                                 {node.locked ? (
                                   <Lock className="w-3 h-3 text-amber-500" />
                                 ) : (
-                                  <Unlock className="w-3 h-3 text-gray-500 hover:text-gray-900" />
+                                  <Unlock className="w-3 h-3 text-slate-500 hover:text-slate-900" />
                                 )}
                               </button>
                               <button
                                 disabled={node.element.type === 'flow_content'} onClick={() => onToggleHideNode(section.id, node.id)}
-                                className="p-0.5 hover:text-gray-900"
+                                className="p-0.5 hover:text-slate-900"
                                 title={node.hidden ? 'Hiện' : 'Ẩn'}
                               >
                                 {node.hidden ? (
-                                  <EyeOff className="w-3 h-3 text-gray-500" />
+                                  <EyeOff className="w-3 h-3 text-slate-500" />
                                 ) : (
-                                  <Eye className="w-3 h-3 text-gray-400 hover:text-gray-900" />
+                                  <Eye className="w-3 h-3 text-slate-400 hover:text-slate-900" />
                                 )}
                               </button>
                               <button
                                 disabled={node.element.type === 'flow_content'} onClick={() => onDuplicateNode(section.id, node.id)}
-                                className="p-0.5 hover:text-gray-900 text-gray-400"
+                                className="p-0.5 hover:text-slate-900 text-slate-400"
                                 title="Nhân bản"
                               >
                                 <Copy className="w-3 h-3" />
                               </button>
                               <button
-                                disabled={node.element.type === 'flow_content'} onClick={() => onDeleteNode(section.id, node.id)}
-                                className="p-0.5 hover:text-rose-500 text-gray-400"
+                                disabled={node.element.type === 'flow_content' || node.locked} onClick={() => onDeleteNode(section.id, node.id)}
+                                className="p-0.5 hover:text-rose-500 text-slate-400"
                                 title="Xóa"
                               >
                                 <Trash2 className="w-3 h-3" />

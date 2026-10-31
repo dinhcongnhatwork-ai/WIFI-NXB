@@ -15,7 +15,6 @@ export function useFullscreen(ref: RefObject<HTMLElement>) {
     if (document.fullscreenElement === ref.current)
       await document.exitFullscreen().catch(() => {});
     setActive(false);
-    opener.current?.focus();
   }, [ref]);
   const toggle = useCallback(async () => {
     if (active) {
@@ -38,18 +37,23 @@ export function useFullscreen(ref: RefObject<HTMLElement>) {
       if (document.fullscreenElement === ref.current) setActive(true);
       else if (!fallback.current) {
         setActive(false);
-        opener.current?.focus();
       }
     };
     document.addEventListener("fullscreenchange", change);
     return () => document.removeEventListener("fullscreenchange", change);
   }, [ref]);
   useEffect(() => {
+    if (active || !opener.current) return;
+    // Presentation mode hides the opener; focus it only after React restores the header.
+    const frame = requestAnimationFrame(() => opener.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [active]);
+  useEffect(() => {
     if (!active) return;
     const before = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const key = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && fallback.current) {
+      if (event.key === "Escape") {
         event.preventDefault();
         void close();
       }

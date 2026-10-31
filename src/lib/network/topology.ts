@@ -175,6 +175,39 @@ export function buildUnifiTopology(
     if (d.mac || d.macAddress) byMac.set(mac(d.mac || d.macAddress), id);
     if (d.id || d._id) byId.set(String(d.id || d._id), id);
   }
+  const hasExplicitGateway = Array.from(g.nodes.values()).some(
+    (n) => n.type === "gateway",
+  );
+  let coreGatewayId: string | undefined;
+  if (!hasExplicitGateway) {
+    const reportsGateway = (d: Observation) => d.gateway_mac || d.gatewayMac || d.config_network?.gateway;
+    const gatewayEvidence = devices.find(d => d.status === "online" && reportsGateway(d)) || devices.find(reportsGateway);
+    if (gatewayEvidence) {
+      const gwMac = mac(
+        gatewayEvidence.gateway_mac ||
+          gatewayEvidence.gatewayMac ||
+          gatewayEvidence.config_network?.gateway ||
+          "core-gateway",
+      );
+      const gwIp =
+        gatewayEvidence.config_network?.gateway ||
+        gatewayEvidence.gateway_ip || undefined;
+      coreGatewayId = g.add({
+        id: `gateway:${gwMac}`,
+        type: "gateway",
+        name: "Gateway Trung tâm",
+        mac: gatewayEvidence.gateway_mac || gatewayEvidence.gatewayMac,
+        ip: gwIp,
+        status: "online",
+        meta: {
+          inferredFromGatewayMac: true,
+        },
+      });
+      if (gatewayEvidence.gateway_mac || gatewayEvidence.gatewayMac) {
+        byMac.set(gwMac, coreGatewayId);
+      }
+    }
+  }
   // WAN is a labelled inference only when an observed gateway reports an active WAN address.
   for (const d of devices) {
     const gateway =
@@ -219,7 +252,7 @@ export function buildUnifiTopology(
       byMac.get(mac(d.mac || d.macAddress)) || byId.get(String(d.id || d._id));
     if (!target) continue;
     const up = d.uplink || {};
-    const source =
+    let source =
       byMac.get(
         mac(
           up.uplink_remote_mac ||
@@ -232,6 +265,9 @@ export function buildUnifiTopology(
       byId.get(
         String(up.deviceId || d.uplinkDeviceId || d.uplink_device_id || ""),
       );
+    if (coreGatewayId && g.nodes.get(target)?.type === "ap") {
+      source = coreGatewayId;
+    }
     g.edge(
       source,
       target,
@@ -241,19 +277,21 @@ export function buildUnifiTopology(
       up.uplink_remote_port || up.remotePort,
       up.port_idx || up.portIndex,
     );
-    for (const port of d.portTable || d.port_table || []) {
-      for (const neighbor of port.lldp_table || []) {
-        const peer = byMac.get(mac(neighbor.chassis_id || neighbor.chassisId));
-        if (peer)
-          g.edge(
-            target,
-            peer,
-            "lldp",
-            "physical",
-            "device.port_table.lldp_table",
-            port.port_idx,
-            neighbor.port_id,
-          );
+    if (!coreGatewayId) {
+      for (const port of d.portTable || d.port_table || []) {
+        for (const neighbor of port.lldp_table || []) {
+          const peer = byMac.get(mac(neighbor.chassis_id || neighbor.chassisId));
+          if (peer)
+            g.edge(
+              target,
+              peer,
+              "lldp",
+              "physical",
+              "device.port_table.lldp_table",
+              port.port_idx,
+              neighbor.port_id,
+            );
+        }
       }
     }
   }
@@ -344,7 +382,10 @@ export function buildUnifiTopology(
     // A device aggregate is not a measurement of its uplink; use uplink counters only.
     else if (child?.meta?.uplink)
       edge.traffic = sampleTraffic(
-        unifiUplinkCounters(child.meta.uplink),
+        unifiUplinkCounters(
+          child.meta.uplink,
+          child.status === "offline" || child.status === "disconnected",
+        ),
         "UniFi · device.uplink",
         observedAt,
       );
@@ -352,6 +393,69 @@ export function buildUnifiTopology(
       edge.channel = child?.meta?.channel;
       edge.radio = child?.meta?.radio;
       edge.signal = child?.meta?.signal;
+    }
+  }
+  if (coreGatewayId) {
+    const nodeById = new Map(result.nodes.map((n) => [n.id, n]));
+    for (let pass = 0; pass < 3; pass++) {
+      for (const node of result.nodes) {
+        if (node.type !== "ap" && node.id !== coreGatewayId) continue;
+        const offline =
+          node.status === "offline" || node.status === "disconnected";
+        if (offline) continue;
+        const outLinks = result.links.filter((e) => e.source === node.id);
+        let sumDown = 0;
+        let sumUp = 0;
+        let sumDownBytes = 0;
+        let sumUpBytes = 0;
+        for (const out of outLinks) {
+          const t = out.traffic || nodeById.get(out.target)?.traffic;
+          if (!t) continue;
+          if (t.downloadBps != null && t.downloadBps > 0)
+            sumDown += t.downloadBps;
+          if (t.uploadBps != null && t.uploadBps > 0) sumUp += t.uploadBps;
+          if (t.downloadBytes != null && t.downloadBytes > 0)
+            sumDownBytes += t.downloadBytes;
+          if (t.uploadBytes != null && t.uploadBytes > 0)
+            sumUpBytes += t.uploadBytes;
+        }
+        const curDown = node.traffic?.downloadBps ?? 0;
+        const curUp = node.traffic?.uploadBps ?? 0;
+        const nextDown = Math.max(curDown, sumDown);
+        const nextUp = Math.max(curUp, sumUp);
+        node.traffic = {
+          downloadBytes:
+            Math.max(node.traffic?.downloadBytes ?? 0, sumDownBytes) ||
+            node.traffic?.downloadBytes ||
+            0,
+          uploadBytes:
+            Math.max(node.traffic?.uploadBytes ?? 0, sumUpBytes) ||
+            node.traffic?.uploadBytes ||
+            0,
+          downloadBps: nextDown,
+          uploadBps: nextUp,
+          perspective: "user",
+          source: node.traffic?.source || "UniFi · stat/device",
+          sampledAt: observedAt,
+        };
+        for (const inEdge of result.links) {
+          if (inEdge.target === node.id && inEdge.type === "uplink") {
+            const eDown = inEdge.traffic?.downloadBps ?? 0;
+            const eUp = inEdge.traffic?.uploadBps ?? 0;
+            inEdge.traffic = {
+              downloadBytes:
+                inEdge.traffic?.downloadBytes ?? node.traffic.downloadBytes,
+              uploadBytes:
+                inEdge.traffic?.uploadBytes ?? node.traffic.uploadBytes,
+              downloadBps: Math.max(eDown, nextDown),
+              uploadBps: Math.max(eUp, nextUp),
+              perspective: "user",
+              source: inEdge.traffic?.source || "UniFi · device.uplink",
+              sampledAt: observedAt,
+            };
+          }
+        }
+      }
     }
   }
   return result;
@@ -371,20 +475,30 @@ export function buildMikrotikTopology(
   leases: Observation[] = [],
 ): Topology {
   const g = graph(observedAt);
-  const routerIp = addresses.find((a) => a.interface === "ether1" || a.interface === "bridge")?.address?.split("/")[0] || "192.168.1.200";
+  const enabledAddresses = addresses.filter(a => a.address && String(a.disabled) !== "true" && String(a.invalid) !== "true");
+  const bridgeNames = new Set(interfaces.filter(i => i.type === "bridge").map(i => i.name));
+  const routerIp = (enabledAddresses.find(a => bridgeNames.has(a.interface)) || enabledAddresses[0])?.address?.split("/")[0];
   const router = g.add({
     id: "router:local",
     type: "gateway",
-    name: identity.name || "CCR2004",
+    name: identity.name || "MikroTik",
     ip: routerIp,
     status: "observed",
-    meta: { hotspotSessions: sessions.length, model: "CCR2004-16G-2S+", vendor: "MikroTik" },
+    meta: {
+      hotspotSessions: sessions.length,
+      model: identity.model || identity["board-name"],
+      version: identity.version,
+      vendor: "MikroTik",
+      provider: "mikrotik",
+    },
   });
   const byName = new Map<string, string>();
   for (const i of interfaces) {
     const name = String(i.name || i[".id"] || "");
     if (!name) continue;
-    const ifaceIp = addresses.find((a) => a.interface === name)?.address?.split("/")[0];
+    const ifaceIp = addresses
+      .find((a) => a.interface === name)
+      ?.address?.split("/")[0];
     const id = g.add({
       id: `interface:${i[".id"] || name}`,
       type: i.type === "bridge" ? "bridge" : "interface",
@@ -428,14 +542,30 @@ export function buildMikrotikTopology(
       name: n.identity || identityKey,
       mac: n["mac-address"],
       ip: n.address,
-      meta: { platform: n.platform, version: n.version, role: "switch" },
+      meta: {
+        platform: n.platform,
+        model: n.board,
+        version: n.version,
+        provider: "mikrotik",
+        discovered: true,
+      },
     });
-    const iface = String(n.interface || "").split(",")[0];
+    const reported = String(n.interface || "")
+      .split(",")
+      .map((name: string) => name.trim());
+    const physical = reported.find((name: string) =>
+      interfaces.some(
+        (local) =>
+          local.name === name &&
+          ["ether", "ethernet", "wifi", "wlan"].includes(local.type),
+      ),
+    );
+    const iface = physical || reported.find((name: string) => byName.has(name));
     g.edge(
-      byName.get(iface) || router,
+      iface ? byName.get(iface) : undefined,
       id,
       "neighbor",
-      "physical",
+      physical ? "physical" : "logical",
       "/ip/neighbor",
       iface,
       n["interface-name"],
@@ -454,7 +584,7 @@ export function buildMikrotikTopology(
       byName.get(h["on-interface"]),
       id,
       "bridge-host",
-      "physical",
+      "logical",
       "/interface/bridge/host",
       h["on-interface"],
     );
@@ -467,16 +597,17 @@ export function buildMikrotikTopology(
   }
 
   // Add all connected devices from ARP table (28 devices with IP)
-  for (const a of (arp as any[])) {
+  for (const a of arp as any[]) {
     const ip = a.address || a.ip;
     if (!ip || String(a.disabled) === "true") continue;
     const macAddr = mac(a["mac-address"] || a.macAddress);
-    const iface = String(a.interface || a.interfaceName || "ether1");
+    const iface = String(a.interface || a.interfaceName || "");
     const id = macAddr ? `client:${macAddr}` : `client:arp:${ip}`;
     const lease = macAddr ? leaseMap.get(macAddr) : undefined;
     const existing = g.nodes.get(id);
 
-    const hostname = lease?.["host-name"] || (lease as any)?.hostName || a.comment;
+    const hostname =
+      lease?.["host-name"] || (lease as any)?.hostName || a.comment;
     const name = hostname || (macAddr ? `Thiết bị ${ip}` : `Host ${ip}`);
 
     g.add({
@@ -485,7 +616,11 @@ export function buildMikrotikTopology(
       name: existing?.name && existing.name !== macAddr ? existing.name : name,
       mac: macAddr || existing?.mac,
       ip: ip,
-      status: a.complete === false ? "incomplete" : "online",
+      status:
+        String(a.complete) === "false" ||
+        /failed|incomplete/.test(String(a.status || ""))
+          ? "incomplete"
+          : "observed",
       meta: {
         ...existing?.meta,
         interface: iface,
@@ -495,15 +630,8 @@ export function buildMikrotikTopology(
       },
     });
 
-    const parentId = byName.get(iface) || byName.get("bridge-wifi") || router;
-    g.edge(
-      parentId,
-      id,
-      "arp-host",
-      "physical",
-      "/ip/arp",
-      iface,
-    );
+    const parentId = byName.get(iface);
+    g.edge(parentId, id, "arp-host", "logical", "/ip/arp", iface);
   }
 
   for (const session of sessions) {
@@ -536,7 +664,8 @@ export function buildMikrotikTopology(
   for (const edge of result.links) {
     const child = g.nodes.get(edge.target);
     if (edge.type === "interface") edge.traffic = child?.traffic;
-    if (edge.type === "bridge-host" || edge.type === "arp-host") edge.traffic = child?.traffic;
+    if (edge.type === "bridge-host" || edge.type === "arp-host")
+      edge.traffic = child?.traffic;
   }
   return result;
 }

@@ -18,10 +18,10 @@ import {
 const CmsBuilder = dynamic(() => import('@/components/cms/CmsBuilder'), {
   ssr: false,
   loading: () => (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-100 text-slate-900">
       <div className="text-center">
-        <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-        <p className="text-slate-400 text-sm font-medium">Đang tải trình thiết kế CMS WiFi Marketing...</p>
+        <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-slate-600 text-sm font-medium">Đang tải trình thiết kế CMS WiFi Marketing...</p>
       </div>
     </div>
   ),
@@ -62,10 +62,10 @@ export default function BuilderPage() {
 
   if (loading) {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-950 flex items-center justify-center text-white">
+      <div className="fixed inset-0 z-50 bg-slate-100 flex items-center justify-center text-slate-900">
         <div className="text-center">
-          <div className="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
-          <p className="text-slate-400 text-sm">Đang tải dữ liệu mẫu...</p>
+          <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-slate-600 text-sm">Đang tải dữ liệu mẫu...</p>
         </div>
       </div>
     );

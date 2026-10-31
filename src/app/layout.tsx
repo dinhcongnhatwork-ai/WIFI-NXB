@@ -1,3 +1,4 @@
+import './portal-fonts.css';
 import type { Metadata } from 'next';
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
@@ -10,6 +11,7 @@ import '@fontsource/inter/vietnamese-700.css';
 import '@fontsource/jetbrains-mono/latin-400.css';
 import './globals.css';
 import { Toaster } from 'react-hot-toast';
+import { SmoothScrollProvider } from '@/components/providers/SmoothScrollProvider';
 
 export const metadata: Metadata = {
   title: 'WiFi Marketing Platform',
@@ -24,7 +26,7 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <body className="antialiased">
-        {children}
+        <SmoothScrollProvider>{children}</SmoothScrollProvider>
         <Toaster
           position="top-right"
           toastOptions={{

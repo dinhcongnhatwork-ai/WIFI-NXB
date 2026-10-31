@@ -53,7 +53,7 @@ export const AccessDeviceNode = memo(function AccessDeviceNode({
     const ClientIcon = getClientIcon(device.name, device.meta?.hostname);
     return (
       <div
-        className={`w-full overflow-hidden rounded-xl border bg-gradient-to-b from-white to-slate-50/80 text-slate-800 shadow-sm transition-all duration-200 hover:shadow-md ${
+        className={`w-full overflow-hidden rounded-xl border bg-white text-slate-800 shadow-sm transition-all duration-200 hover:shadow-md ${
           selected
             ? "border-sky-500 ring-2 ring-sky-200"
             : "border-slate-200/90 hover:border-sky-300"
@@ -133,8 +133,8 @@ export const AccessDeviceNode = memo(function AccessDeviceNode({
   if (isSwitch) {
     return (
       <div
-        className={`h-full overflow-hidden rounded-2xl border bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white shadow-lg transition-all duration-200 ${
-          selected ? "border-amber-400 ring-2 ring-amber-300" : "border-indigo-800/60"
+        className={`h-full overflow-hidden rounded-2xl border bg-slate-900 text-white shadow-lg transition-all duration-200 ${
+          selected ? "border-amber-400 ring-2 ring-amber-300" : "border-slate-700"
         }`}
       >
         <Handle
@@ -168,7 +168,7 @@ export const AccessDeviceNode = memo(function AccessDeviceNode({
               <span className="text-[10px] text-slate-400 font-sans">IP:</span>
               <span className="font-bold">{device.ip || "192.168.0.x"}</span>
             </div>
-            <span className="rounded bg-indigo-500/30 px-2 py-0.5 text-[10px] font-semibold text-indigo-200 border border-indigo-400/30">
+            <span className="rounded bg-blue-500/30 px-2 py-0.5 text-[10px] font-semibold text-blue-200 border border-blue-400/30">
               {data.clientCount || 0} APs trực thuộc
             </span>
           </div>
@@ -202,7 +202,7 @@ export const AccessDeviceNode = memo(function AccessDeviceNode({
   if (isGateway) {
     return (
       <div
-        className={`flex h-full flex-col justify-between rounded-2xl border bg-gradient-to-b from-white via-slate-50 to-blue-50/40 text-slate-800 shadow-md transition-all duration-200 ${
+        className={`flex h-full flex-col justify-between rounded-2xl border bg-white text-slate-800 shadow-md transition-all duration-200 ${
           selected
             ? "border-blue-600 ring-2 ring-blue-200"
             : "border-blue-200/90 shadow-blue-500/5 hover:border-blue-400"
@@ -211,7 +211,7 @@ export const AccessDeviceNode = memo(function AccessDeviceNode({
         <div className="p-3.5 pb-2">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-500/20">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm shadow-blue-500/20">
                 <Router size={24} />
               </div>
               <div className="min-w-0 flex-1">

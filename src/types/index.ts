@@ -12,10 +12,54 @@ export interface BackgroundConfig {
   imageDesktop?: string;
   videoMobile?: string;
   videoDesktop?: string;
-  type: 'cover' | 'contain' | 'fill';
+  type: 'cover' | 'contain' | 'fill' | 'repeat';
   overlayColor: string;
   overlayOpacity: number;
   padding: string;
+  // Extended Portal Background capabilities
+  bgMode?: 'solid' | 'gradient' | 'image';
+  gradient?: string;
+  gradientFrom?: string;
+  gradientVia?: string;
+  gradientTo?: string;
+  gradientAngle?: number;
+  overlayMode?: 'solid' | 'gradient';
+  overlayGradientDirection?: 'to-b' | 'to-t' | 'radial';
+  overlayGradientTo?: string;
+  imageBlur?: number;
+  brightness?: number;
+  contrast?: number;
+  saturate?: number;
+  grayscale?: number;
+  pattern?: 'none' | 'dots' | 'grid' | 'waves' | 'diagonal';
+  patternColor?: string;
+  patternOpacity?: number;
+}
+
+export type ShadowSize = 'none' | 'sm' | 'soft' | 'md' | 'medium' | 'lg' | 'strong' | 'xl' | 'glow';
+
+export interface TypographyStyleProps {
+  fontFamily?: string;
+  fontWeight?: string | number;
+  fontStyle?: 'normal' | 'italic';
+  textDecoration?: 'none' | 'underline' | 'line-through';
+  textTransform?: 'none' | 'uppercase' | 'capitalize' | 'lowercase';
+  lineHeight?: number | string;
+  letterSpacing?: number | string;
+  textShadow?: string;
+  textStroke?: string;
+  textStrokeWidth?: number;
+  textStrokeColor?: string;
+  textGradient?: string;
+  // Text Box / Pill / Badge container styling
+  bgColor?: string;
+  bgOpacity?: number;
+  paddingX?: number;
+  paddingY?: number;
+  borderRadius?: string;
+  borderColor?: string;
+  borderWidth?: number | string;
+  backdropBlur?: number;
 }
 
 export type TemplateElement =
@@ -41,30 +85,34 @@ export interface LogoElement extends BaseElement {
   type: 'logo';
   src: string;
   width: string;
+  height?: string;
   position: 'left' | 'center' | 'right';
+  bgColor?: string;
+  bgOpacity?: number;
+  padding?: number | string;
+  borderRadius?: string;
+  borderColor?: string;
+  borderWidth?: number | string;
+  shadow?: ShadowSize;
+  opacity?: number;
   canvasPosition?: { x: number; y: number } | null;
 }
 
-export interface TitleElement extends BaseElement {
+export interface TitleElement extends BaseElement, TypographyStyleProps {
   type: 'title';
   content: string;
   color: string;
   fontSize: string;
-  align: 'left' | 'center' | 'right';
-  textShadow?: string;
-  textStroke?: string;
-  textStrokeColor?: string;
+  align: 'left' | 'center' | 'right' | 'justify';
   canvasPosition?: { x: number; y: number } | null;
 }
 
-export interface DescriptionElement extends BaseElement {
+export interface DescriptionElement extends BaseElement, TypographyStyleProps {
   type: 'description';
   content: string;
   color: string;
   fontSize: string;
-  textShadow?: string;
-  textStroke?: string;
-  textStrokeColor?: string;
+  align?: 'left' | 'center' | 'right' | 'justify';
   canvasPosition?: { x: number; y: number } | null;
 }
 
@@ -80,24 +128,44 @@ export interface ImageElement extends BaseElement {
   zoom: number;       // 1 = 100%, 1.5 = 150%
   posX: number;       // percentage offset X (0 = center)
   posY: number;       // percentage offset Y (0 = center)
-  shadow?: 'none' | 'sm' | 'md' | 'lg' | 'glow';
-  borderStyle?: 'none' | 'solid' | 'glass';
+  shadow?: ShadowSize;
+  borderStyle?: 'none' | 'solid' | 'dashed' | 'double' | 'glass';
   borderColor?: string;
-  borderWidth?: string;
+  borderWidth?: string | number;
+  aspectRatio?: 'auto' | '16/9' | '4/3' | '1/1' | '3/4' | '9/16';
+  maskShape?: 'rect' | 'rounded' | 'circle' | 'arch' | 'pill';
+  opacity?: number;
+  brightness?: number;
+  contrast?: number;
+  saturate?: number;
+  grayscale?: number;
+  blur?: number;
+  caption?: string;
+  captionPosition?: 'below' | 'overlay-bottom';
+  captionColor?: string;
+  captionBgColor?: string;
   canvasPosition?: { x: number; y: number } | null;
 }
 
 export interface ImageSliderElement extends BaseElement {
   type: 'image_slider';
-  images: { src: string; alt: string }[];
-  imagesDesktop?: { src: string; alt: string }[];
+  images: { src: string; alt: string; title?: string; subtitle?: string; badge?: string }[];
+  imagesDesktop?: { src: string; alt: string; title?: string; subtitle?: string; badge?: string }[];
   height: string;
   heightDesktop?: string;
   borderRadius: string;
   objectFit: 'cover' | 'contain' | 'fill';
   autoplay: boolean;
   interval: number;   // seconds
-  shadow?: 'none' | 'sm' | 'md' | 'lg' | 'glow';
+  shadow?: ShadowSize;
+  borderStyle?: 'none' | 'solid' | 'dashed' | 'double' | 'glass';
+  borderColor?: string;
+  borderWidth?: string | number;
+  transitionType?: 'slide' | 'fade';
+  showArrows?: boolean;
+  showDots?: boolean;
+  showCaptions?: boolean;
+  aspectRatio?: 'auto' | '16/9' | '4/3' | '1/1';
   canvasPosition?: { x: number; y: number } | null;
 }
 
@@ -112,7 +180,11 @@ export interface VideoElement extends BaseElement {
   aspectRatio: '16:9' | '9:16' | '4:3' | 'auto';
   frameWidth: string;
   frameWidthDesktop?: string;
-  shadow?: 'none' | 'sm' | 'md' | 'lg' | 'glow';
+  shadow?: ShadowSize;
+  borderRadius?: string;
+  borderStyle?: 'none' | 'solid' | 'dashed' | 'double' | 'glass';
+  borderColor?: string;
+  borderWidth?: string | number;
   canvasPosition?: { x: number; y: number } | null;
 }
 
@@ -140,10 +212,19 @@ export interface ConnectButtonElement extends BaseElement {
   imageWidth?: string;
   imageWidthDesktop?: string;
   buttonStyle?: 'solid' | 'gradient' | 'glass' | 'outline';
-  gradient?: string;
+  gradient?: string | { from?: string; via?: string; to?: string; angle?: number; css?: string };
   buttonEffect?: 'none' | 'glow' | 'pulse' | 'shimmer' | 'lift';
   buttonIcon?: 'none' | 'wifi' | 'arrow' | 'lightning' | 'shield';
-  shadow?: 'none' | 'sm' | 'md' | 'lg' | 'glow';
+  shadow?: ShadowSize;
+  fontFamily?: string;
+  fontSize?: string;
+  fontWeight?: string | number;
+  fontStyle?: 'normal' | 'italic';
+  textTransform?: 'none' | 'uppercase' | 'capitalize';
+  letterSpacing?: number | string;
+  paddingY?: number | string;
+  borderColor?: string;
+  borderWidth?: number | string;
   canvasPosition?: { x: number; y: number } | null;
 }
 
@@ -166,6 +247,8 @@ export interface VideoGateElement extends BaseElement {
   overlayBlur?: string;
   muted?: boolean;
   showVolumeControl?: boolean;
+  buttonBgColor?: string;
+  buttonTextColor?: string;
 }
 
 export interface AnnouncementElement extends BaseElement {

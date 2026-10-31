@@ -882,7 +882,7 @@ export default function ReportsPage() {
                             setCampaignFilter(c.id);
                             setActiveTab('meetings');
                           }}
-                          className="rounded-md bg-purple-50 dark:bg-purple-900/40 px-2 py-0.5 text-xs font-semibold text-purple-700 dark:text-purple-300 hover:underline"
+                          className="rounded-md bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 text-xs font-semibold text-blue-700 dark:text-blue-300 hover:underline"
                           title="Lọc danh sách cuộc họp theo chiến dịch này"
                         >
                           {c.meetingSessionsCount} cuộc họp →

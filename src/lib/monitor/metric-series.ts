@@ -16,7 +16,7 @@ export const METRICS = [
 
 function defaultUnits(metric: string): string {
   if (metric.endsWith(".percent")) return "%";
-  if (metric.includes("bytes_sec")) return "bit/s";
+  if (metric.includes("bytes_sec")) return "B/s";
   if (metric.includes(".ms") || metric === "response.ms") return "ms";
   if (metric.includes("clients")) return "khách";
   if (metric.includes("uptime")) return "s";
@@ -139,30 +139,8 @@ export async function metricSeries(
     } catch {}
   }
 
-  // 3. If still no points, synthesize from target's latest observed metrics
-  const curVal = target.metadata?.metrics?.[metric];
-  if (points.length === 0 && curVal !== undefined && curVal !== null) {
-    const numVal = Number(curVal);
-    if (!Number.isNaN(numVal)) {
-      const stepCount = Math.min(15, Math.max(5, Math.floor(seconds / 60)));
-      const stepMs = Math.floor((seconds * 1000) / stepCount);
-      for (let t = start; t <= end; t += stepMs) {
-        const jitter = metric.endsWith(".percent")
-          ? Math.max(0, Math.min(100, numVal + (Math.sin(t / 45000) * 1.2)))
-          : numVal;
-        points.push({ at: t, value: Number(jitter.toFixed(1)) });
-      }
-      dataSource = "device-cache";
-    }
-  }
-
-  // Default thresholds for percentage metrics if none from Zabbix
-  if (thresholds.length === 0 && metric.endsWith(".percent")) {
-    thresholds = [
-      { value: 80, severity: "3", name: "Cảnh báo 80%" },
-      { value: 90, severity: "4", name: "Nguy cấp 90%" },
-    ];
-  }
+  // Current metadata snapshots cannot establish historical measurements.
+  // Only recorded Zabbix or collector points belong in this series.
 
   // Construct series with gaps
   const series: Point[] = [];
@@ -174,7 +152,7 @@ export async function metricSeries(
     series.push(p);
   }
 
-  const lastAt = points.at(-1)?.at || (target.lastSeenAt ? new Date(target.lastSeenAt).getTime() : undefined);
+  const lastAt = points.filter((point) => point.value !== null).at(-1)?.at;
   if (!series.length || series[0].at - start > gap) {
     series.unshift({ at: start, value: null });
   }
@@ -194,7 +172,7 @@ export async function metricSeries(
     targetId: target.id,
     name: target.name,
     metric,
-    units: itemUnits || defaultUnits(metric),
+    units: (dataSource === "zabbix" ? itemUnits : undefined) || defaultUnits(metric),
     points: downsample(series),
     thresholds,
     thresholdQuality,

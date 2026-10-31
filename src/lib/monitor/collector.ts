@@ -227,13 +227,15 @@ async function collectConnection(
       {
         key: `mikrotik.${id}`,
         name: identity?.name || c.name,
-        kind: "router",
+        kind: c.config.deviceRole === "core-switch" || c.config.deviceRole === "access-switch" ? "switch" : "router",
         connectionId: id,
         deviceId: id,
         metrics,
         metadata: {
           provider,
-          model: resource.boardName,
+          deviceRole:c.config.deviceRole||"router",
+          location:c.config.location,
+          model: resource.boardName||c.config.model,
           version: resource.version,
           interfaces: interfaces.map((i) => ({
             id: i.id,

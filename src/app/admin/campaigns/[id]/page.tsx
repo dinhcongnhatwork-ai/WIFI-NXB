@@ -1,5 +1,6 @@
 'use client';
 
+import { localDateTimeToIso, isoToLocalDateTime } from '@/lib/attendance/constants';
 import { useEffect, useState, FormEvent, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -58,13 +59,14 @@ export default function EditCampaignPage() {
   const [portalEnabled, setPortalEnabled] = useState(false);
   const [redirectUrl, setRedirectUrl] = useState('');
 
-  const fetchUnifiData = useCallback(async () => {
+  const fetchUnifiData = useCallback(async (site?: string) => {
     try {
       setLoadingUnifi(true);
-      const res = await authenticatedFetch('/api/unifi/ssids');
+      const res = await authenticatedFetch(`/api/unifi/ssids${site ? `?siteId=${encodeURIComponent(site)}` : ''}`);
       const json = await res.json();
       if (json.success && Array.isArray(json.data)) {
         setUnifiSsids(json.data);
+        if (json.site) setUnifiSite(json.site);
       }
     } catch {
       // ignore
@@ -103,14 +105,13 @@ export default function EditCampaignPage() {
   useEffect(() => {
     if (!token || !id) return;
 
-    fetchUnifiData();
-
     Promise.all([
       api.get<{ data: Campaign }>(`/api/campaigns/${id}`, token),
       api.get<{ data: Template[] }>('/api/templates', token),
     ])
       .then(([cRes, tRes]) => {
         const c = cRes.data;
+        void fetchUnifiData(c.unifiSite || undefined);
         setName(c.name);
         setSsid(c.ssid);
         if (c.wlanConfId) {
@@ -121,8 +122,8 @@ export default function EditCampaignPage() {
           setUnifiSite(c.unifiSite);
         }
         setTemplateId(c.templateId);
-        setStartTime(new Date(c.startTime).toISOString().slice(0, 16));
-        setEndTime(new Date(c.endTime).toISOString().slice(0, 16));
+        setStartTime(isoToLocalDateTime(c.startTime));
+        setEndTime(isoToLocalDateTime(c.endTime));
         setActive(c.active);
         setPortalEnabled(c.portalEnabled);
         setRedirectUrl(c.redirectUrl || '');
@@ -145,8 +146,8 @@ export default function EditCampaignPage() {
           wlanConfId: ssidMode === 'unifi' ? selectedWlanId : null,
           unifiSite,
           templateId,
-          startTime,
-          endTime,
+          startTime: localDateTimeToIso(startTime),
+          endTime: localDateTimeToIso(endTime),
           active,
           portalEnabled,
           redirectUrl,
@@ -205,11 +206,11 @@ export default function EditCampaignPage() {
               <label className="block text-sm font-bold text-slate-800">
                 Mạng phát sóng & SSID (UniFi Controller)
               </label>
-              <p className="text-xs text-slate-500">Chọn SSID trực tiếp từ UniFi Controller hoặc nhập thủ công</p>
+              <p className="text-xs text-slate-500">Chỉ SSID mở có chiến dịch đang hoạt động và mẫu đã xuất bản mới yêu cầu qua portal. SSID có mật khẩu luôn truy cập trực tiếp.</p>
             </div>
             <button
               type="button"
-              onClick={fetchUnifiData}
+              onClick={() => { void fetchUnifiData(unifiSite); }}
               disabled={loadingUnifi}
               className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition-colors"
             >

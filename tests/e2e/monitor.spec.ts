@@ -115,21 +115,17 @@ test("alerts retain old active problems alongside recent resolved history and de
   await expect(
     page.getByText("Old active outage", { exact: true }),
   ).toBeVisible();
-  const old = page
-    .getByText("Old active outage", { exact: true })
-    .locator("..");
+  const old = page.locator(".divide-y > div").filter({ has: page.getByText("Old active outage", { exact: true }) });
   await expect(old).toContainText("Đang diễn ra");
   await expect(old).toContainText("Đã xác nhận");
   await expect(
     page.getByText("Current duplicate", { exact: true }),
   ).toHaveCount(1);
-  const duplicate = page
-    .getByText("Current duplicate", { exact: true })
-    .locator("..");
+  const duplicate = page.locator(".divide-y > div").filter({ has: page.getByText("Current duplicate", { exact: true }) });
   await expect(duplicate).toContainText("Đang diễn ra");
   await expect(duplicate).toContainText("Đã xác nhận");
   await expect(
-    page.getByText("Recent resolved outage", { exact: true }).locator(".."),
+    page.locator(".divide-y > div").filter({ has: page.getByText("Recent resolved outage", { exact: true }) }),
   ).toContainText("Đã phục hồi");
 });
 
@@ -221,7 +217,7 @@ test("polls current charts alerts and logs every thirty seconds and retains stal
   await page.goto("/admin/monitor");
   await expect(
     page
-      .getByRole("img", { name: "Biểu đồ lịch sử CPU (%)" })
+      .getByRole("img", { name: "Biểu đồ lịch sử CPU (%) · Tải vi xử lý", exact: true })
       .locator("canvas"),
   ).toBeVisible();
   const initial = counts.metrics;
@@ -229,7 +225,7 @@ test("polls current charts alerts and logs every thirty seconds and retains stal
   await page.clock.fastForward(30000);
   await expect.poll(() => counts.metrics).toBeGreaterThan(initial);
   await expect(
-    page.getByRole("img", { name: "Biểu đồ lịch sử CPU (%)" }),
+    page.getByRole("img", { name: "Biểu đồ lịch sử CPU (%) · Tải vi xử lý", exact: true }),
   ).toBeVisible();
   await expect(
     page
@@ -239,7 +235,7 @@ test("polls current charts alerts and logs every thirty seconds and retains stal
       .first(),
   ).toBeVisible();
   failing = false;
-  await page.getByRole("button", { name: "Cảnh báo", exact: true }).click();
+  await page.getByRole("button", { name: /^Cảnh báo & Bất thường(?:\s*\d+)?$/ }).click();
   await expect(
     page.getByText("Active polling alert", { exact: true }),
   ).toBeVisible();
@@ -254,7 +250,7 @@ test("polls current charts alerts and logs every thirty seconds and retains stal
     page.getByText("Polling interrupted. Cảnh báo đã lưu có thể đã cũ."),
   ).toBeVisible();
   failing = false;
-  await page.getByRole("button", { name: "Nhật ký", exact: true }).click();
+  await page.getByRole("button", { name: "Nhật ký vận hành", exact: true }).click();
   await expect(
     page.getByText("Retained polling log", { exact: true }),
   ).toBeVisible();
@@ -414,15 +410,13 @@ test("monitoring retains stale history, filters logs, and shows missing sources 
   });
   await page.goto("/admin/monitor");
   await expect(
-    page.getByRole("heading", { name: "Giám sát", exact: true }),
+    page.getByRole("heading", { name: "Giám sát Hệ thống & Bất thường", exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByText("Nguồn giám sát đang gián đoạn hoặc thiếu dữ liệu.", {
-      exact: false,
-    }),
+    page.getByText("Nguồn dữ liệu giám sát", { exact: true }).locator("..").getByText("Dữ liệu cũ", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("img", { name: "Biểu đồ lịch sử CPU (%)" }),
+    page.getByRole("img", { name: "Biểu đồ lịch sử CPU (%) · Tải vi xử lý", exact: true }),
   ).toBeVisible();
   await expect(
     page
@@ -433,31 +427,31 @@ test("monitoring retains stale history, filters logs, and shows missing sources 
   ).toBeVisible();
   await expect(
     page
-      .getByRole("img", { name: "Biểu đồ lịch sử CPU (%)" })
+      .getByRole("img", { name: "Biểu đồ lịch sử CPU (%) · Tải vi xử lý", exact: true })
       .locator("canvas"),
   ).toBeVisible();
   await page.screenshot({
     path: ".tmp/network-upgrade/monitor-desktop.png",
     fullPage: true,
   });
-  await page.getByRole("button", { name: "Thiết bị", exact: true }).click();
+  await page.getByRole("button", { name: /^Thiết bị(?:\s*\d+)?$/ }).click();
   await expect(
-    page.getByRole("button", { name: "Router A", exact: true }),
+    page.getByRole("button").filter({ has: page.getByRole("heading", { name: "Router A", exact: true }) }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Tài nguyên", exact: true }).click();
   await expect(
-    page.getByText("Nhịp hoạt động dịch vụ điểm danh:"),
+    page.getByText("Nguồn chưa cung cấp đối tượng dịch vụ trong phạm vi này.", { exact: true }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "Nhật ký", exact: true }).click();
+  await page.getByRole("button", { name: "Nhật ký vận hành", exact: true }).click();
   await expect(page.getByText("Router link down")).toBeVisible();
   await page.getByLabel("Mức độ nhật ký").selectOption("warning");
   await expect(page).toHaveURL(/severity=warning/);
-  await page.getByRole("button", { name: "Cảnh báo", exact: true }).click();
+  await page.getByRole("button", { name: /^Cảnh báo & Bất thường(?:\s*\d+)?$/ }).click();
   await expect(
-    page.getByText("Zabbix HTTP 503. Cảnh báo đã lưu có thể đã cũ."),
+    page.getByRole("alert").filter({ hasText: "Zabbix HTTP 503" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Xác nhận", exact: true }),
+    page.getByRole("button", { name: "Xác nhận xử lý", exact: true }),
   ).toHaveCount(0);
 });
 
@@ -537,7 +531,7 @@ test("overview polls at most four endpoints and operator acknowledges through an
   await page.goto("/admin/monitor");
   await expect(
     page
-      .getByRole("img", { name: "Biểu đồ lịch sử CPU (%)" })
+      .getByRole("img", { name: "Biểu đồ lịch sử CPU (%) · Tải vi xử lý", exact: true })
       .locator("canvas"),
   ).toBeVisible();
   await expect(
@@ -546,12 +540,13 @@ test("overview polls at most four endpoints and operator acknowledges through an
   expect(
     polls.filter((p) => !p.endsWith("/acknowledge")).length,
   ).toBeLessThanOrEqual(4);
-  await page.getByRole("button", { name: "Xác nhận", exact: true }).click();
+  await page.getByRole("button", { name: /^Cảnh báo & Bất thường(?:\s*\d+)?$/ }).click();
+  await page.getByRole("button", { name: "Xác nhận xử lý", exact: true }).click();
   await expect(
-    page.getByRole("dialog", { name: "Xác nhận cảnh báo" }),
+    page.getByRole("dialog", { name: "Xác nhận Xử lý Cảnh báo", exact: true }),
   ).toBeVisible();
   await page
-    .getByLabel("Ghi chú", { exact: true })
+    .getByLabel("Ghi chú của người vận hành:", { exact: true })
     .fill("Đang kiểm tra radio tại tầng 1");
   await page.getByRole("button", { name: "Lưu xác nhận", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -596,7 +591,7 @@ test("custom monitoring interval validates locally and forwards explicit bounds 
   });
   await page.goto("/admin/monitor");
   await page.getByLabel("Khoảng thời gian").selectOption("custom");
-  await page.getByRole("button", { name: "Áp dụng khoảng" }).click();
+  await page.getByRole("button", { name: "Áp dụng mốc", exact: true }).click();
   await expect(
     page
       .getByRole("alert")
@@ -607,7 +602,7 @@ test("custom monitoring interval validates locally and forwards explicit bounds 
   const input = (date: Date) => date.toISOString().slice(0, 16);
   await page.getByLabel("Bắt đầu tùy chọn").fill(input(start));
   await page.getByLabel("Kết thúc tùy chọn").fill(input(end));
-  await page.getByRole("button", { name: "Áp dụng khoảng" }).click();
+  await page.getByRole("button", { name: "Áp dụng mốc", exact: true }).click();
   await expect(page).toHaveURL(/time=custom/);
   await expect
     .poll(

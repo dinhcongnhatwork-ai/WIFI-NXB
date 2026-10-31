@@ -5,6 +5,8 @@ import { duration, observedTime, radioLabel, wifiStandard } from "./ap-model";
 import { DeviceIcon } from "../DeviceIcon";
 import { Copy, X } from "lucide-react";
 import { SourceStamp } from "@/components/ui/operations";
+import { TimeChart } from "@/components/monitor/MonitorCharts";
+import { trafficDirections } from "./network-layout";
 import { ClientContextPanel } from "./ClientContextPanel";
 import { useAuth } from "@/components/auth/AuthProvider";
 import {
@@ -111,68 +113,48 @@ function Field({
     </div>
   );
 }
-function History({ points }: { points: HistoryPoint[] }) {
-  const valid = points.filter((p) => p.download != null || p.upload != null);
-  if (valid.length < 2)
-    return (
-      <p className="py-7 text-center text-xs text-slate-500">
-        Đang thu thập lịch sử · tối đa 15 phút trong trình duyệt.
-      </p>
-    );
-  const start = points[0].at;
-  const duration = Math.max(1, points[points.length - 1].at - start);
-  const max = Math.max(
-    1,
-    ...points.flatMap((p) => [p.download || 0, p.upload || 0]),
-  );
-  const paths = (key: "download" | "upload") => {
-    let d = "";
-    let gap = true;
-    points.forEach((p, i) => {
-      if (p[key] == null || (i > 0 && p.at - points[i - 1].at > 15000)) {
-        gap = true;
-        if (p[key] == null) return;
-      }
-      d += `${gap ? "M" : "L"}${(((p.at - start) / duration) * 330).toFixed(1)},${(90 - (p[key]! / max) * 80).toFixed(1)} `;
-      gap = false;
-    });
-    return d;
-  };
+function History({
+  points,
+  traffic,
+}: {
+  points: HistoryPoint[];
+  traffic?: Traffic;
+}) {
+  const raw = traffic?.perspective === "interface";
   return (
-    <div>
-      <svg
-        viewBox="0 0 330 105"
-        role="img"
-        aria-label="Lưu lượng 15 phút: download xanh, upload xám"
-        className="mt-4 w-full"
-      >
-        <path d="M0 90H330" stroke="#e2e8f0" />
-        <path
-          d={paths("download")}
-          fill="none"
-          stroke="#2563eb"
-          strokeWidth="2"
-        />
-        <path
-          d={paths("upload")}
-          fill="none"
-          stroke="#64748b"
-          strokeWidth="1.5"
-        />
-      </svg>
-      <div className="flex justify-between text-[10px] text-slate-500">
-        <span>
-          {new Date(start).toLocaleTimeString("vi-VN", {
-            timeZone: "Asia/Bangkok",
-          })}
-        </span>
-        <span>{rate(max)}</span>
-        <span>
-          {new Date(points[points.length - 1].at).toLocaleTimeString("vi-VN", {
-            timeZone: "Asia/Bangkok",
-          })}
-        </span>
-      </div>
+    <div className="mt-4">
+      <TimeChart
+        compact
+        title="Lưu lượng trong phiên"
+        unit="bit/s"
+        area
+        series={[
+          {
+            label: raw ? "RX · Nhận" : "Tải xuống",
+            data: {
+              metric: "rx.bytes_sec",
+              source: traffic?.source || "Phiên trình duyệt",
+              aggregation: "Lịch sử tối đa 15 phút",
+              points: points.map((p) => ({
+                at: p.at,
+                value: raw ? p.upload : p.download,
+              })),
+            },
+          },
+          {
+            label: raw ? "TX · Gửi" : "Tải lên",
+            data: {
+              metric: "tx.bytes_sec",
+              source: traffic?.source || "Phiên trình duyệt",
+              aggregation: "Lịch sử tối đa 15 phút",
+              points: points.map((p) => ({
+                at: p.at,
+                value: raw ? p.download : p.upload,
+              })),
+            },
+          },
+        ]}
+      />
     </div>
   );
 }
@@ -183,50 +165,45 @@ function TrafficCard({
   traffic?: Traffic;
   history?: HistoryPoint[];
 }) {
+  const direction = trafficDirections(traffic);
   return (
     <div className="rounded-lg border border-slate-200 p-4">
       <h3 className="mb-4 text-sm font-semibold text-slate-900">
-        Lưu lượng thực tế
+        Lưu lượng quan sát
       </h3>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <p className="text-xs text-slate-500">
-            {traffic?.perspective === "interface"
-              ? "Đã truyền (TX)"
-              : "Đã tải xuống"}
+          <p className="text-xs text-slate-500">{direction.receiveLabel}</p>
+          <p className="mt-1 font-mono text-lg font-semibold text-blue-600">
+            {rate(direction.receive)}
           </p>
-          <p className="mt-1 font-mono text-xl font-semibold text-slate-900">
-            {bytes(traffic?.downloadBytes)}
-          </p>
-          <p className="mt-2 font-mono text-xs text-blue-600">
-            {traffic?.perspective === "interface" ? "TX" : "↓"}{" "}
-            {rate(traffic?.downloadBps)}
+          <p className="mt-2 font-mono text-xs text-slate-500">
+            Tổng {bytes(direction.receiveBytes)}
           </p>
         </div>
         <div>
-          <p className="text-xs text-slate-500">
-            {traffic?.perspective === "interface"
-              ? "Đã nhận (RX)"
-              : "Đã tải lên"}
-          </p>
-          <p className="mt-1 font-mono text-xl font-semibold text-slate-900">
-            {bytes(traffic?.uploadBytes)}
+          <p className="text-xs text-slate-500">{direction.sendLabel}</p>
+          <p className="mt-1 font-mono text-lg font-semibold network-send">
+            {rate(direction.send)}
           </p>
           <p className="mt-2 font-mono text-xs text-slate-500">
-            {traffic?.perspective === "interface" ? "RX" : "↑"}{" "}
-            {rate(traffic?.uploadBps)}
+            Tổng {bytes(direction.sendBytes)}
           </p>
         </div>
       </div>
       <p className="mt-3 text-xs leading-5 text-slate-500">
-        Tổng từ bộ đếm của nguồn; có thể đặt lại khi thiết bị hoặc phiên kết nối
+        {traffic?.perspective === "interface"
+          ? "RX / TX theo phía interface; chưa xác định chiều người dùng. "
+          : ""}
+        Tổng từ bộ đếm nguồn; có thể đặt lại khi thiết bị hoặc phiên kết nối
         khởi động lại.
       </p>
       <Source traffic={traffic} />
-      <History points={history} />
+      <History points={history} traffic={traffic} />
     </div>
   );
 }
+
 export function DetailDrawer({
   device,
   edge,
@@ -249,20 +226,24 @@ export function DetailDrawer({
   observedAt: string;
 }) {
   const { canAdmin } = useAuth();
-  const defaultTab = device?.type === "branch" ? "related" : "overview";
+  const defaultTab = device?.meta?.layoutOnly ? "related" : "overview";
   const [storedTab, setTab] = useState(defaultTab);
   const [tabOwner, setTabOwner] = useState(device?.id || edge?.id);
   const tab = tabOwner === (device?.id || edge?.id) ? storedTab : defaultTab;
   const closeRef = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     setTabOwner(device?.id || edge?.id);
-    setTab(device?.type === "branch" ? "related" : "overview");
+    setTab(device?.meta?.layoutOnly ? "related" : "overview");
+    const previousFocus = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     const escape = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", escape);
-    return () => document.removeEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("keydown", escape);
+      if (previousFocus?.isConnected) previousFocus.focus();
+    };
   }, [device?.id, edge?.id, onClose]);
   if (!device && !edge) return null;
   const meta = device?.meta || {};
@@ -270,20 +251,25 @@ export function DetailDrawer({
   const ports = Array.isArray(meta.portTable) ? meta.portTable : [];
   const radios = Array.isArray(meta.radioTable) ? meta.radioTable : [];
   const title = device?.name || "Chi tiết liên kết";
-  const tabs = device?.type === "branch" ? [["related", "Thiết bị trong nhóm"]] : [
-    ["overview", "Tổng quan"],
-    ["connection", "Kết nối"],
-    ["traffic", "Lưu lượng"],
-    ["related", "Liên quan"],
-  ];
+  const tabs = device?.meta?.layoutOnly
+    ? [["related", "Thiết bị trong nhóm"]]
+    : [
+        ["overview", "Tổng quan"],
+        [
+          "connection",
+          device?.meta?.provider === "mikrotik" ? "Cổng & kết nối" : "Kết nối",
+        ],
+        ["traffic", "Lưu lượng"],
+        ["related", "Liên quan"],
+      ];
   return (
     <aside
       aria-label="Chi tiết quan sát"
-      className="flex max-h-[80vh] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white xl:w-[400px]"
+      className="flex max-h-[80vh] flex-col overflow-hidden rounded-xl border border-slate-200 bg-white xl:w-[380px]"
     >
       <header className="border-b border-slate-200 p-5">
         <div className="flex items-start gap-3">
-          {device && <DeviceIcon device={device} size={36} />} 
+          {device && <DeviceIcon device={device} size={56} />}
           <div className="min-w-0 flex-1">
             <p className="mb-1 text-xs font-medium uppercase tracking-wide text-slate-500">
               {device ? typeLabel(device.type) : "Liên kết quan sát"}
@@ -318,7 +304,11 @@ export function DetailDrawer({
         )}
         <Source
           traffic={meta.layoutOnly ? undefined : traffic}
-          fallback={meta.layoutOnly ? meta.description : `Quan sát · ${observedAt ? new Date(observedAt).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" }) : "—"}`}
+          fallback={
+            meta.layoutOnly
+              ? meta.description
+              : `Quan sát · ${observedAt ? new Date(observedAt).toLocaleString("vi-VN", { timeZone: "Asia/Bangkok" }) : "—"}`
+          }
         />
       </header>
       <div
@@ -373,22 +363,63 @@ export function DetailDrawer({
               label="Model / nền tảng"
               value={meta.model || meta.platform}
             />
-            <Field label={device.type === "client" ? "Hệ điều hành" : "Firmware"} value={meta.osName || meta.version} />
-            {device.type !== "client" && <Field label="Thời gian hoạt động" value={duration(meta.uptime)} />}
+            <Field
+              label={device.type === "client" ? "Hệ điều hành" : "Firmware"}
+              value={meta.osName || meta.version}
+            />
+            {device.type !== "client" && (
+              <Field
+                label="Thời gian hoạt động"
+                value={duration(meta.uptime)}
+              />
+            )}
             <Field label="Địa chỉ IP" value={device.ip} copy />
             <Field label="MAC" value={device.mac} copy />
-            {device.type === "client" && <>
-              <Field label="Đang kết nối vào AP" value={meta.apName || meta.apMac} />
-              <Field label="SSID" value={meta.ssid} />
-              <Field label="Thời gian kết nối" value={duration(meta.uptime)} />
-              <Field label="Được cấp quyền mạng" value={meta.authorized == null ? null : meta.authorized ? "Có" : "Chưa"} />
-              <Field label="Mạng khách" value={meta.isGuest == null ? null : meta.isGuest ? "Có" : "Không"} />
-              <Field label="Lần đầu ghi nhận" value={observedTime(meta.firstSeen)} />
-              <Field label="Lần kết nối" value={observedTime(meta.assocTime)} />
-              <Field label="Nhàn rỗi" value={duration(meta.inactivityTime)} />
-              <Field label="Ghi nhận gần nhất" value={observedTime(meta.lastSeen)} />
-            </>}
-            {(device.type === "gateway" || device.type === "ap" || device.type === "switch") && (
+            {device.type === "client" && (
+              <>
+                <Field
+                  label="Đang kết nối vào AP"
+                  value={meta.apName || meta.apMac}
+                />
+                <Field label="SSID" value={meta.ssid} />
+                <Field
+                  label="Thời gian kết nối"
+                  value={duration(meta.uptime)}
+                />
+                <Field
+                  label="Được cấp quyền mạng"
+                  value={
+                    meta.authorized == null
+                      ? null
+                      : meta.authorized
+                        ? "Có"
+                        : "Chưa"
+                  }
+                />
+                <Field
+                  label="Mạng khách"
+                  value={
+                    meta.isGuest == null ? null : meta.isGuest ? "Có" : "Không"
+                  }
+                />
+                <Field
+                  label="Lần đầu ghi nhận"
+                  value={observedTime(meta.firstSeen)}
+                />
+                <Field
+                  label="Lần kết nối"
+                  value={observedTime(meta.assocTime)}
+                />
+                <Field label="Nhàn rỗi" value={duration(meta.inactivityTime)} />
+                <Field
+                  label="Ghi nhận gần nhất"
+                  value={observedTime(meta.lastSeen)}
+                />
+              </>
+            )}
+            {(device.type === "gateway" ||
+              device.type === "ap" ||
+              device.type === "switch") && (
               <div className="mt-3">
                 <Field
                   label="CPU"
@@ -399,7 +430,7 @@ export function DetailDrawer({
                   value={meta.memUsage != null ? `${meta.memUsage}%` : null}
                 />
                 <Link
-                  href="/admin/monitor"
+                  href={`/admin/monitor${meta.connectionId ? `?connectionId=${encodeURIComponent(meta.connectionId)}${meta.siteId ? `&siteId=${encodeURIComponent(meta.siteId)}` : ""}` : typeof window !== "undefined" ? window.location.search : ""}`}
                   className="text-sm font-medium text-blue-600"
                 >
                   CPU / RAM · Mở trang Giám sát →
@@ -410,6 +441,91 @@ export function DetailDrawer({
         )}
         {tab === "connection" && device && (
           <>
+            {meta.provider === "mikrotik" && (
+              <>
+                {meta.collectionError && (
+                  <p
+                    role="status"
+                    className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800"
+                  >
+                    {meta.collectionError}
+                  </p>
+                )}
+                <div className="network-ports-section">
+                  <h3>
+                    Kết nối theo cổng · {meta.connectedApPorts ?? "—"} cổng nối
+                    AP
+                  </h3>
+                  {Array.isArray(meta.portConnections) &&
+                  meta.portConnections.length > 0 ? (
+                    <table className="network-ports-table">
+                      <thead>
+                        <tr>
+                          <th>Cổng tại thiết bị</th>
+                          <th>Thiết bị phía bên kia</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {meta.portConnections.map((row: any) => (
+                          <tr key={row.id}>
+                            <td className="font-mono">
+                              {row.localPort || "—"}
+                            </td>
+                            <td>
+                              <button onClick={() => onSelect(row.peerId)}>
+                                {row.peerName}
+                              </button>
+                              <small>
+                                {row.peerType === "ap"
+                                  ? "AP"
+                                  : typeLabel(row.peerType)}{" "}
+                                · Cổng phía bên kia:{" "}
+                                {row.remotePort || "Chưa có dữ liệu"}
+                              </small>
+                              <small>
+                                {row.evidence}
+                                {row.layer === "logical"
+                                  ? " · Quan hệ logic, chưa xác định cáp vật lý"
+                                  : ""}
+                              </small>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="p-3 text-xs text-slate-500">
+                      Chưa có dữ liệu láng giềng theo cổng. Kiểm tra Neighbor
+                      Discovery / LLDP trên RouterOS.
+                    </p>
+                  )}
+                </div>
+                {ports.length > 0 && (
+                  <div className="network-ports-section">
+                    <h3>Danh sách cổng ({ports.length})</h3>
+                    <table className="network-ports-table">
+                      <thead>
+                        <tr>
+                          <th>Cổng</th>
+                          <th>Trạng thái</th>
+                          <th>MAC</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ports.map((port: any, index: number) => (
+                          <tr key={port.name || index}>
+                            <td className="font-mono">{port.name || "—"}</td>
+                            <td>{port.status || "Chưa rõ"}</td>
+                            <td className="font-mono">{port.mac || "—"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
             <dl>
               <Field label="Điểm truy cập" value={meta.apName || meta.apMac} />
               <Field label="SSID" value={meta.ssid} />
@@ -427,14 +543,30 @@ export function DetailDrawer({
                     : null
                 }
               />
-              <Field label="Noise" value={meta.noise != null ? `${meta.noise} dBm` : null} />
-              <Field label="SNR" value={meta.noise != null && meta.signal != null ? `${Math.round(meta.signal-meta.noise)} dB` : null} />
+              <Field
+                label="Noise"
+                value={meta.noise != null ? `${meta.noise} dBm` : null}
+              />
+              <Field
+                label="SNR"
+                value={
+                  meta.noise != null && meta.signal != null
+                    ? `${Math.round(meta.signal - meta.noise)} dB`
+                    : null
+                }
+              />
               <Field label="Chuẩn WiFi" value={wifiStandard(meta.protocol)} />
               <Field label="Gói nhận (RX)" value={meta.rxPackets} />
               <Field label="Gói truyền (TX)" value={meta.txPackets} />
               <Field label="TX retries" value={meta.txRetries} />
-              <Field label="PHY RX" value={meta.rxPhyMbps != null ? `${meta.rxPhyMbps} Mbps` : null} />
-              <Field label="PHY TX" value={meta.txPhyMbps != null ? `${meta.txPhyMbps} Mbps` : null} />
+              <Field
+                label="PHY RX"
+                value={meta.rxPhyMbps != null ? `${meta.rxPhyMbps} Mbps` : null}
+              />
+              <Field
+                label="PHY TX"
+                value={meta.txPhyMbps != null ? `${meta.txPhyMbps} Mbps` : null}
+              />
               <Field label="VLAN" value={meta.vlan} />
               <Field
                 label="Uplink"
@@ -447,7 +579,9 @@ export function DetailDrawer({
                 }
               />
             </dl>
-            {(device.type === "gateway" || device.type === "ap" || device.type === "switch") && (
+            {(device.type === "gateway" ||
+              device.type === "ap" ||
+              device.type === "switch") && (
               <div>
                 <h3 className="mb-2 text-sm font-semibold">
                   Interface quan sát
@@ -481,7 +615,7 @@ export function DetailDrawer({
                 ))}
               </div>
             )}
-            {ports.length > 0 && (
+            {ports.length > 0 && meta.provider !== "mikrotik" && (
               <div>
                 <h3 className="mb-3 text-sm font-semibold">Cổng mạng</h3>
                 <div className="mb-3 grid grid-cols-8 gap-1">
@@ -573,7 +707,7 @@ export function DetailDrawer({
           <>
             <h3 className="text-sm font-semibold">
               {rows.length
-                ? `${rows.length} ${device?.type === "branch" ? "AP" : "máy khách"} · sắp theo lưu lượng`
+                ? `${rows.length} thiết bị · sắp theo lưu lượng nhận`
                 : "Thông tin liên quan"}
             </h3>
             {rows.length ? (
@@ -581,8 +715,8 @@ export function DetailDrawer({
                 {[...rows]
                   .sort(
                     (a, b) =>
-                      (b.traffic?.downloadBps || 0) -
-                      (a.traffic?.downloadBps || 0),
+                      (trafficDirections(b.traffic).receive || 0) -
+                      (trafficDirections(a.traffic).receive || 0),
                   )
                   .map((n) => (
                     <button
@@ -591,9 +725,11 @@ export function DetailDrawer({
                       className="flex w-full items-center justify-between gap-2 border-b border-slate-100 py-3 text-left text-xs"
                     >
                       <DeviceIcon device={n} size={24} />
-                      <span className="min-w-0 flex-1 truncate font-medium">{n.name}</span>
+                      <span className="min-w-0 flex-1 truncate font-medium">
+                        {n.name}
+                      </span>
                       <span className="shrink-0 font-mono text-blue-600">
-                        ↓ {rate(n.traffic?.downloadBps)}
+                        ↓ {rate(trafficDirections(n.traffic).receive)}
                       </span>
                     </button>
                   ))}

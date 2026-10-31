@@ -7,17 +7,18 @@ import { localDelta, resizeFromHandle, magneticLayout, type ResizeHandle } from 
 export interface CmsCanvasHandle { convertSection: (sectionId: string, change?: (section: DesignSection) => void) => void }
 interface CmsCanvasProps {
   document: TemplateDocumentV2; device: DeviceVariant; screen: ScreenId; previewTarget: PreviewTarget; viewport: Viewport; zoom: number; mode: 'edit' | 'simulate';
-  selectedNodeId: string | null; selectedSectionId: string | null;
-  onSelectNode: (nodeId: string | null, sectionId?: string | null) => void; onSelectSection: (sectionId: string | null) => void;
+  selectedNodeId: string | null; selectedNodeIds?: string[]; selectedSectionId: string | null;
+  onSelectNode: (nodeId: string | null, sectionId?: string | null, multi?: boolean) => void; onSelectSection: (sectionId: string | null) => void;
   onUpdateNodeLayout: (sectionId: string, nodeId: string, layout: NodeLayout) => void;
   onCommitGesture: (document: TemplateDocumentV2) => void;
   onDeleteNode: (sectionId: string, nodeId: string) => void; onDuplicateNode: (sectionId: string, nodeId: string) => void;
   onUpdateText: (sectionId: string, nodeId: string, text: string) => void;
   onUndo: () => void; onRedo: () => void;
+  onMeasuredFitZoom?: (zoom: number) => void;
 }
 const HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
 const positions: Record<ResizeHandle, React.CSSProperties> = { nw: {left:-5,top:-5,cursor:'nwse-resize'}, n:{left:'50%',top:-5,cursor:'ns-resize'}, ne:{right:-5,top:-5,cursor:'nesw-resize'}, e:{right:-5,top:'50%',cursor:'ew-resize'}, se:{right:-5,bottom:-5,cursor:'nwse-resize'}, s:{left:'50%',bottom:-5,cursor:'ns-resize'}, sw:{left:-5,bottom:-5,cursor:'nesw-resize'}, w:{left:-5,top:'50%',cursor:'ew-resize'} };
-const CmsCanvas = forwardRef<CmsCanvasHandle, CmsCanvasProps>(function CmsCanvas({ document: doc, device, screen, previewTarget, viewport, zoom, mode, selectedNodeId, selectedSectionId, onSelectNode, onSelectSection, onUpdateNodeLayout, onCommitGesture, onDeleteNode, onDuplicateNode, onUpdateText, onUndo, onRedo }, ref) {
+const CmsCanvas = forwardRef<CmsCanvasHandle, CmsCanvasProps>(function CmsCanvas({ document: doc, device, screen, previewTarget, viewport, zoom, mode, selectedNodeId, selectedNodeIds = [], selectedSectionId, onSelectNode, onSelectSection, onUpdateNodeLayout, onCommitGesture, onDeleteNode, onDuplicateNode, onUpdateText, onUndo, onRedo, onMeasuredFitZoom }, ref) {
   const frame = useRef<DeviceFrameHandle>(null), container = useRef<HTMLDivElement>(null);
   const [frameWindow, setFrameWindow] = useState<Window | null>(null);
   const [transient, setTransient] = useState<TemplateDocumentV2 | null>(null);
@@ -53,6 +54,27 @@ const CmsCanvas = forwardRef<CmsCanvasHandle, CmsCanvasProps>(function CmsCanvas
   useImperativeHandle(ref, () => ({ convertSection: (id, change) => { const next = convertedDocument(id, doc); const section = screenSurface(next.variants[device], screen).sections.find(s => s.id === id); if (section && (change || section.mode !== screenSurface(doc.variants[device], screen).sections.find(s => s.id === id)?.mode)) { change?.(section); onCommitGesture(next); } } }), [doc, device, screen, convertedDocument, onCommitGesture]);
   useEffect(() => () => cleanup.current?.(), []);
   useEffect(() => { cleanup.current?.(); setTransient(null); setEditing(null); }, [device, screen, mode, viewport.width, viewport.height, zoom]);
+
+  useEffect(() => {
+    const el = container.current;
+    if (!el || !onMeasuredFitZoom) return;
+    const calculate = () => {
+      const framePadding = device === 'mobile' ? 12 : device === 'tablet' ? 16 : 10;
+      const headerHeight = device === 'desktop' ? 38 : 0;
+      const frameW = viewport.width + framePadding * 2;
+      const frameH = viewport.height + framePadding * 2 + headerHeight;
+      const availableW = Math.max(100, el.clientWidth - 48);
+      const availableH = Math.max(100, el.clientHeight - 48);
+      const calculated = Math.min(availableW / frameW, availableH / frameH, 1.25);
+      onMeasuredFitZoom(Math.max(0.2, Math.round(calculated * 100) / 100));
+    };
+    calculate();
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(calculate);
+      observer.observe(el);
+      return () => observer.disconnect();
+    }
+  }, [device, viewport.width, viewport.height, onMeasuredFitZoom]);
   function parentPoint(event: PointerEvent) {
     const rect = frame.current?.getIframeRect();
     const owner = (event.target as Node | null)?.ownerDocument;
@@ -125,31 +147,58 @@ const CmsCanvas = forwardRef<CmsCanvasHandle, CmsCanvasProps>(function CmsCanvas
       if (e.key === 'Escape') { if (cleanup.current) cleanup.current(); else onSelectNode(null, null); return; }
       if (mode !== 'edit' || cleanup.current) return;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? onRedo() : onUndo(); return; }
-      const s = screenSurface(doc.variants[device], screen).sections.find(s => !!findNode(s.nodes, selectedNodeId || ''));
-      const node = s && findNode(s.nodes, selectedNodeId || '');
-      if (!s || !node) return;
-      if ((e.key === 'Delete' || e.key === 'Backspace') && !node.locked && node.element.type !== 'flow_content') { e.preventDefault(); onDeleteNode(s.id, node.id); }
-      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') { e.preventDefault(); onDuplicateNode(s.id, node.id); }
-      else if (e.key.startsWith('Arrow') && !node.locked) {
-        e.preventDefault(); const step = e.shiftKey ? 10 : 1;
+      
+      const activeIds = selectedNodeIds.length > 0 ? selectedNodeIds : selectedNodeId ? [selectedNodeId] : [];
+      if (activeIds.length === 0) return;
+
+      const s = screenSurface(doc.variants[device], screen).sections.find(sec => sec.nodes.some(n => activeIds.includes(n.id)));
+      if (!s) return;
+
+      if ((e.key === 'Delete' || e.key === 'Backspace')) {
+        e.preventDefault();
+        for (const id of activeIds) {
+          const n = findNode(s.nodes, id);
+          if (n && !n.locked && n.element.type !== 'flow_content') onDeleteNode(s.id, id);
+        }
+        return;
+      }
+      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        for (const id of activeIds) {
+          const n = findNode(s.nodes, id);
+          if (n && !n.locked) onDuplicateNode(s.id, id);
+        }
+        return;
+      }
+      else if (e.key.startsWith('Arrow')) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
         const next = s.mode === 'flow' ? convertedDocument(s.id, doc) : clone(doc);
-        const section = screenSurface(next.variants[device], screen).sections.find(section => section.id === s.id)!;
-        const n = findNode(section.nodes, node.id)!;
-        if (e.key === 'ArrowLeft') n.layout.x -= step; else if (e.key === 'ArrowRight') n.layout.x += step; else if (e.key === 'ArrowUp') n.layout.y -= step; else if (e.key === 'ArrowDown') n.layout.y += step;
+        const section = screenSurface(next.variants[device], screen).sections.find(sec => sec.id === s.id)!;
+        for (const id of activeIds) {
+          const n = findNode(section.nodes, id);
+          if (n && !n.locked) {
+            if (e.key === 'ArrowLeft') n.layout.x -= step;
+            else if (e.key === 'ArrowRight') n.layout.x += step;
+            else if (e.key === 'ArrowUp') n.layout.y -= step;
+            else if (e.key === 'ArrowDown') n.layout.y += step;
+          }
+        }
         onCommitGesture(next);
       }
     };
     const keyUp = (e: KeyboardEvent) => { if (e.code === 'Space') { setSpace(false); pan.current = null; } };
     for (const win of [window, frameWindow]) if (win) { win.addEventListener('keydown', keyDown); win.addEventListener('keyup', keyUp); }
     return () => { for (const win of [window, frameWindow]) if (win) { win.removeEventListener('keydown', keyDown); win.removeEventListener('keyup', keyUp); } };
-  }, [doc, device, screen, selectedNodeId, mode, frameWindow, convertedDocument, onSelectNode, onCommitGesture, onDeleteNode, onDuplicateNode, onUndo, onRedo]);
+  }, [doc, device, screen, selectedNodeId, selectedNodeIds, mode, frameWindow, convertedDocument, onSelectNode, onCommitGesture, onDeleteNode, onDuplicateNode, onUndo, onRedo]);
   const overlay = (node: DesignNode, section: DesignSection) => {
     if (mode !== 'edit') return null;
-    const selected = node.id === selectedNodeId;
+    const isMultiSelected = selectedNodeIds.includes(node.id);
+    const selected = isMultiSelected || node.id === selectedNodeId;
     return <div data-editor-overlay={node.id} style={{ position:'absolute', inset:0, outline:selected ? '2px solid #2563eb' : undefined, outlineOffset:0, zIndex:selected ? 30 : 20, cursor:node.locked ? 'not-allowed' : space ? 'grab' : selected ? 'move' : 'pointer', touchAction:'none' }}
-      onClick={e => { e.stopPropagation(); onSelectNode(node.id, section.id); }} onPointerDown={e => startGesture(e, node, section)}
+      onClick={e => { e.stopPropagation(); onSelectNode(node.id, section.id, e.ctrlKey || e.metaKey || e.shiftKey); }} onPointerDown={e => startGesture(e, node, section)}
       onDoubleClick={e => { if (!node.locked && (node.element.type === 'title' || node.element.type === 'description')) { e.stopPropagation(); setEditing({ nodeId: node.id, sectionId: section.id, text: node.element.content }); } }}>
-      {selected && <><span className="pointer-events-none absolute -top-6 left-0 whitespace-nowrap rounded bg-blue-600 px-1.5 py-0.5 text-[10px] text-white">{node.name} · {Math.round(node.layout.width)}×{Math.round(node.layout.height)}</span>{!node.locked && HANDLES.map(handle => <div key={handle} data-resize-handle={handle} aria-label={`Resize ${handle}`} style={{position:'absolute',width:10,height:10,background:'#fff',border:'2px solid #2563eb',borderRadius:2,...positions[handle]}} onPointerDown={e => startGesture(e, node, section, handle)} />)}</>}
+      {selected && <><span className="pointer-events-none absolute -top-6 left-0 whitespace-nowrap rounded bg-blue-600 px-1.5 py-0.5 text-[10px] text-white font-medium shadow-xs">{node.name} · {Math.round(node.layout.width)}×{Math.round(node.layout.height)}</span>{!node.locked && HANDLES.map(handle => <div key={handle} data-resize-handle={handle} aria-label={`Resize ${handle}`} style={{position:'absolute',width:10,height:10,background:'#fff',border:'2px solid #2563eb',borderRadius:2,...positions[handle]}} onPointerDown={e => startGesture(e, node, section, handle)} />)}</>}
       {editing?.nodeId === node.id && <textarea autoFocus value={editing.text} aria-label="Sửa chữ trực tiếp" className="absolute inset-0 z-50 h-full w-full resize-none rounded border-2 border-blue-600 bg-white p-2 text-sm text-slate-900" onPointerDown={e => e.stopPropagation()} onClick={e => e.stopPropagation()} onChange={e => setEditing({ ...editing, text: e.target.value })} onBlur={() => { onUpdateText(editing.sectionId, editing.nodeId, editing.text); setEditing(null); }} onKeyDown={e => { if (e.key === 'Escape') { e.stopPropagation(); setEditing(null); } if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) e.currentTarget.blur(); }} />}
     </div>;
   };
@@ -157,7 +206,7 @@ const CmsCanvas = forwardRef<CmsCanvasHandle, CmsCanvasProps>(function CmsCanvas
     onPointerDown={e => { if ((space || e.button === 1) && container.current) { e.preventDefault(); pan.current = {x:e.clientX,y:e.clientY,left:container.current.scrollLeft,top:container.current.scrollTop}; e.currentTarget.setPointerCapture(e.pointerId); } }}
     onPointerMove={e => { if (pan.current && container.current) { container.current.scrollLeft = pan.current.left - e.clientX + pan.current.x; container.current.scrollTop = pan.current.top - e.clientY + pan.current.y; } }} onPointerUp={() => { pan.current = null; }}
     onClick={() => { if (!dragging && !editing) { onSelectNode(null, null); onSelectSection(null); } }}>
-    <div className="m-auto shrink-0 p-10 pt-16" onClick={e => e.stopPropagation()}>
+    <div className="m-auto shrink-0 p-6 md:p-8" onClick={e => e.stopPropagation()}>
       <DeviceFrame ref={frame} device={device} viewport={viewport} zoom={zoom} title="Canvas thiết kế" onWindow={setFrameWindow}>
         <DocumentRenderer document={shown} variant={device} viewport={viewport} mode={mode} screen={screen} previewTarget={previewTarget} renderNodeOverlay={overlay} onSelectNode={onSelectNode} selectedNodeId={selectedNodeId} />
         {guides && (() => { const el = sectionElement(guides.sectionId); if (!el) return null; const rect = el.getBoundingClientRect(); const section = surface.sections.find(s => s.id === guides.sectionId)!; const scale = viewport.width / section.width; return <div style={{position:'absolute',left:rect.left,top:rect.top + (frameWindow?.scrollY || 0),width:rect.width,height:rect.height,pointerEvents:'none',zIndex:50}}>{guides.x !== undefined && <div style={{position:'absolute',left:guides.x*scale,top:0,bottom:0,width:1,background:'#2563eb'}} />}{guides.y !== undefined && <div style={{position:'absolute',top:guides.y*scale,left:0,right:0,height:1,background:'#2563eb'}} />}</div>; })()}

@@ -19,11 +19,12 @@ export function startAttendanceWorker(intervalMs = 3000) {
 
   const runLoop = async () => {
     if (!isRunning) return;
+    const cycleStarted=Date.now();
 
     if (!isCycleExecuting) {
       isCycleExecuting = true;
       try {
-        await redis.set('monitor:attendance:heartbeat', JSON.stringify({at:Date.now()}), 'EX', 30).catch(() => {});
+        void redis.set('monitor:attendance:heartbeat', JSON.stringify({at:Date.now()}), 'EX', 30).catch(() => {});
         const activeCount = await prisma.attendanceSession.count({
           where: { status: 'ACTIVE' },
         });
@@ -39,7 +40,7 @@ export function startAttendanceWorker(intervalMs = 3000) {
     }
 
     if (isRunning) {
-      workerTimeout = setTimeout(runLoop, intervalMs);
+      workerTimeout = setTimeout(runLoop, Math.max(250,intervalMs-(Date.now()-cycleStarted)));
     }
   };
 

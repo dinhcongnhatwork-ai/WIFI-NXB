@@ -1,9 +1,10 @@
 'use client';
+import { DeviceIcon } from '@/components/network/DeviceIcon';
 import { networkFetch } from '@/components/network/client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
-import { RefreshCw, Search, ToggleLeft, ToggleRight } from 'lucide-react';
+import { RefreshCw, Search, ToggleLeft, ToggleRight, Cable } from 'lucide-react';
 import type { MikrotikInterface } from '@/types/mikrotik';
 
 function formatBytes(value?: number): string {
@@ -55,7 +56,7 @@ export default function MikrotikInterfacesPage() {
       }
       await fetchInterfaces();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Không thể cập nhật trạng thái interface');
+      setError(err instanceof Error ? err.message : 'Không thể cập nhật trạng thái interface');
     } finally {
       setActionId(null);
     }
@@ -77,7 +78,7 @@ export default function MikrotikInterfacesPage() {
   if (loading && interfaces.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="w-10 h-10 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+        <div className="w-10 h-10 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -92,7 +93,7 @@ export default function MikrotikInterfacesPage() {
         <button
           onClick={() => void fetchInterfaces()}
           disabled={loading}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           Làm mới
@@ -101,12 +102,12 @@ export default function MikrotikInterfacesPage() {
 
       <div className="bg-white rounded-xl border border-slate-200 p-4 mb-6">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Tìm theo tên interface, type, comment"
-            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
       </div>
@@ -124,8 +125,8 @@ export default function MikrotikInterfacesPage() {
                 <th className="text-left px-5 py-3">Type</th>
                 <th className="text-left px-5 py-3">MAC</th>
                 <th className="text-left px-5 py-3">MTU</th>
-                <th className="text-left px-5 py-3">RX</th>
-                <th className="text-left px-5 py-3">TX</th>
+                <th className="text-left px-5 py-3">Tổng RX</th>
+                <th className="text-left px-5 py-3">Tổng TX</th>
                 <th className="text-left px-5 py-3">Status</th>
                 <th className="text-left px-5 py-3">Action</th>
               </tr>
@@ -136,14 +137,14 @@ export default function MikrotikInterfacesPage() {
                 return (
                   <tr key={item.id || item.name} className="hover:bg-slate-50">
                     <td className="px-5 py-3">
-                      <p className="text-sm font-medium text-slate-900">{item.name}</p>
-                      {item.comment && <p className="text-xs text-slate-400">{item.comment}</p>}
+                      <div className="flex items-center gap-3"><DeviceIcon device={{ type: "interface", name: item.name, meta: { provider: "mikrotik", interfaceType: item.type } }} size={36} fallback={<Cable className="h-8 w-8 text-slate-500" />} /><p className="text-[15px] font-medium text-slate-900">{item.name}</p></div>
+                      {item.comment && <p className="text-xs text-slate-500">{item.comment}</p>}
                     </td>
                     <td className="px-5 py-3 text-sm text-slate-600">{item.type || '-'}</td>
                     <td className="px-5 py-3 text-sm font-mono text-slate-600">{item.macAddress || '-'}</td>
                     <td className="px-5 py-3 text-sm text-slate-600">{item.actualMtu || item.mtu || '-'}</td>
-                    <td className="px-5 py-3 text-sm text-slate-600">{formatBytes(item.rxByte)}</td>
-                    <td className="px-5 py-3 text-sm text-slate-600">{formatBytes(item.txByte)}</td>
+                    <td className="px-5 py-3 text-sm text-slate-600">{item.rxByte != null ? formatBytes(item.rxByte) : '—'}</td>
+                    <td className="px-5 py-3 text-sm text-slate-600">{item.txByte != null ? formatBytes(item.txByte) : '—'}</td>
                     <td className="px-5 py-3 text-sm">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${running ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-600'}`}>
                         {running ? 'RUNNING' : item.disabled ? 'DISABLED' : 'DOWN'}
@@ -169,7 +170,7 @@ export default function MikrotikInterfacesPage() {
 
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-8 text-center text-sm text-slate-400">
+                  <td colSpan={8} className="px-5 py-8 text-center text-sm text-slate-500">
                     Không có interface phù hợp
                   </td>
                 </tr>

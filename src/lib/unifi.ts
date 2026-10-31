@@ -416,6 +416,8 @@ export class UnifiClient {
     this.siteResolved = true;
   }
 
+  getSiteId(): string { return this.site; }
+
   isOfficialApi(): boolean { return this.apiMode === 'official'; }
 
   private async officialList(path: string): Promise<any[]> {
@@ -832,12 +834,14 @@ export class UnifiClient {
   async unblockClient(mac: string): Promise<boolean> { return this.clientCommand(mac,'unblock-sta'); }
   async reconnectClient(mac: string): Promise<boolean> { return this.clientCommand(mac,'kick-sta'); }
   async kickClient(mac: string): Promise<boolean> { return this.clientCommand(mac,'kick-sta'); }
-  async authorizeGuest(mac: string, minutes = 1440): Promise<boolean> {
+  async authorizeGuest(mac: string, minutes = 1440, apMac?: string): Promise<boolean> {
     if (!/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(mac)) throw new Error('Địa chỉ MAC không hợp lệ');
+    if (apMac !== undefined && !/^([a-f0-9]{2}:){5}[a-f0-9]{2}$/i.test(apMac)) throw new Error('Địa chỉ MAC AP không hợp lệ');
     const response = await this.post<{ meta?: { rc: string } }>(`/api/s/${this.site}/cmd/stamgr`, {
       cmd: 'authorize-guest',
       mac,
       minutes,
+      ...(apMac ? { ap_mac: apMac.toLowerCase() } : {}),
     });
     return response?.meta?.rc === 'ok';
   }

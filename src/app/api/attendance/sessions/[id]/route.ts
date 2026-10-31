@@ -2,7 +2,9 @@ import { withPermission } from '@/lib/api-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { lockAttendanceSchedules, lockAttendanceSession } from '@/lib/attendance/locking';
-import { getUnifiClientFromRequest } from '@/lib/settings';
+import { attendanceSessionView } from '@/lib/attendance/session-view';
+import { broadcastSessionUpdate } from '@/lib/attendance/monitor';
+import { attendanceDurations } from '@/lib/attendance/observations';
 import { authenticateRequest } from '@/lib/auth';
 import { AttendanceInputError, validateSessionInput, validateSessionRelations } from '@/lib/attendance/session-validation';
 
@@ -16,92 +18,8 @@ async function handleGET(
   try {
     const { id } = params;
 
-    const session = await prisma.attendanceSession.findUnique({
-      where: { id },
-      include: {
-        template: { select: { id: true, name: true } },
-        campaign: { select: { id: true, name: true, ssid: true } },
-        registrations: {
-          orderBy: { createdAt: 'desc' },
-          include: {
-            intervals: {
-              orderBy: { joinedAt: 'desc' },
-              take: 20,
-            },
-            deviceHistories: {
-              orderBy: { createdAt: 'desc' },
-            },
-          },
-        },
-        logs: {
-          orderBy: { createdAt: 'desc' },
-          take: 50,
-        },
-        unregisteredClients: {
-          orderBy: { lastSeenAt: 'desc' },
-          take: 50,
-        },
-      },
-    });
-
-    if (!session) {
-      return NextResponse.json(
-        { success: false, error: 'Không tìm thấy buổi điểm danh.' },
-        { status: 404 }
-      );
-    }
-
-    // Try fetching target AP info from UniFi Controller
-    let targetAps: Array<{ mac: string; name: string; model?: string; status?: string }> = [];
-    const targetApMacs = Array.isArray(session.targetApMacs)
-      ? (session.targetApMacs as string[])
-      : [];
-
-    try {
-      const url=new URL(req.url);url.searchParams.set('siteId',session.unifiSite||'default');
-      const client = await getUnifiClientFromRequest(new Request(url));
-      await client.login();
-      const devices = await client.getDevices();
-
-      targetAps = targetApMacs.map((mac) => {
-        const found = devices.find((d) => d.mac?.toLowerCase() === mac.toLowerCase());
-        return {
-          mac,
-          name: found?.name || found?.model || `AP ${mac}`,
-          model: found?.model,
-          status: found?.status || 'offline',
-        };
-      });
-    } catch {
-      targetAps = targetApMacs.map((mac) => ({
-        mac,
-        name: `AP ${mac}`,
-        status: 'unknown',
-      }));
-    }
-
-    const presentCount = session.registrations.filter((r) => r.status === 'PRESENT').length;
-    const temporaryAbsentCount = session.registrations.filter((r) => r.status === 'TEMPORARY_ABSENT').length;
-    const alertAbsentCount = session.registrations.filter((r) => r.status === 'ALERT_ABSENT').length;
-    const unknownCount = session.registrations.filter((r) => r.status === 'UNKNOWN').length;
-    const totalWarnings = session.registrations.reduce((acc, r) => acc + (r.warningCount || 0), 0);
-
-    const data = {
-      ...session,
-      templateName: session.template?.name || null,
-      campaignName: session.campaign?.name || null,
-      targetAps,
-      stats: {
-        totalRegistered: session.registrations.length,
-        presentCount,
-        temporaryAbsentCount,
-        alertAbsentCount,
-        unknownCount,
-        unregisteredCount: session.unregisteredClients.length,
-        totalWarnings,
-        syncHealth: 'healthy',
-      },
-    };
+    const data = await attendanceSessionView(id);
+    if (!data) return NextResponse.json({success:false,error:'Không tìm thấy buổi điểm danh.'},{status:404});
 
     return NextResponse.json({ success: true, data });
   } catch (error) {
@@ -119,22 +37,35 @@ async function handlePATCH(req: NextRequest, { params }: { params: { id: string 
     const body = await req.json();
     const updated = await prisma.$transaction(async tx => {
       await lockAttendanceSession(tx, params.id);
-      const current = await tx.attendanceSession.findUnique({ where: { id: params.id }, include: { registrations: { include: { intervals: { where: { leftAt: null } } } } } });
+      const current = await tx.attendanceSession.findUnique({ where: { id: params.id }, include: { registrations: { include: { intervals: true } } } });
       if (!current) throw new AttendanceInputError('Không tìm thấy buổi điểm danh.', 404);
       const data = validateSessionInput(body, current);
+      if(current.status==='ENDED'){
+        const baseline=validateSessionInput({},current);
+        for(const key of ['ssid','unifiSite','targetApMacs','templateId','campaignId','startTime','endTime','warningThresholdMinutes','formSchema','nameFieldKey','idFieldKey'] as const){
+          if(JSON.stringify(data[key])!==JSON.stringify(baseline[key]))throw new AttendanceInputError('Buổi họp đã chốt: chỉ sửa thông tin mô tả, giữ nguyên mạng, lịch và cấu hình điểm danh.',409);
+        }
+      }
       await lockAttendanceSchedules(tx, [current, data]);
       await validateSessionRelations(tx, data, current);
       const now = new Date();
+      const closingTime=new Date(Math.min(now.getTime(),current.endTime.getTime()));
       if (data.status === 'ENDED' && current.status !== 'ENDED') {
-        for (const registration of current.registrations) for (const interval of registration.intervals) {
-          await tx.attendanceInterval.update({ where: { id: interval.id }, data: { leftAt: now, durationSeconds: Math.max(0, Math.floor((now.getTime() - interval.joinedAt.getTime()) / 1000)) } });
+        for (const registration of current.registrations) {
+          const intervals = [...registration.intervals];
+          for (const interval of registration.intervals.filter(i => !i.leftAt)) {
+            const closed = await tx.attendanceInterval.update({where:{id:interval.id},data:{leftAt:new Date(Math.max(closingTime.getTime(),interval.joinedAt.getTime())),durationSeconds:Math.max(0,Math.floor((closingTime.getTime()-interval.joinedAt.getTime())/1000))}});
+            intervals[intervals.indexOf(interval)] = closed;
+          }
+          await tx.attendanceRegistration.update({where:{id:registration.id},data:attendanceDurations(intervals,registration.firstSeenAt,closingTime)});
         }
         await tx.attendanceLog.create({ data: { sessionId: current.id, type: 'SESSION_END', message: 'Buổi họp đã kết thúc và chốt dữ liệu báo cáo.', createdAt: now } });
       } else if (data.status === 'ACTIVE' && current.status !== 'ACTIVE') {
         await tx.attendanceLog.create({ data: { sessionId: current.id, type: 'SESSION_START', message: 'Buổi họp được kích hoạt chế độ giám sát trực tiếp.', createdAt: now } });
       }
-      return tx.attendanceSession.update({ where: { id: current.id }, data: { ...data, ...(data.status === 'ENDED' && current.status !== 'ENDED' ? { endedAt: now } : {}) } });
-    }, { isolationLevel: 'ReadCommitted' });
+      return tx.attendanceSession.update({ where: { id: current.id }, data: { ...data, ...(data.status === 'ENDED' && current.status !== 'ENDED' ? { endedAt: closingTime } : {}) } });
+    }, { isolationLevel: 'ReadCommitted',timeout:30000 });
+    await broadcastSessionUpdate(params.id,{type:'SESSION_UPDATED'});
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
     if (error instanceof AttendanceInputError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
@@ -150,12 +81,18 @@ async function handleDELETE(
   if (!authenticateRequest(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
     const { id } = params;
-    await prisma.attendanceSession.delete({
-      where: { id },
+    await prisma.$transaction(async tx => {
+      await lockAttendanceSession(tx,id);
+      const session=await tx.attendanceSession.findUnique({where:{id}});
+      if(!session)throw new AttendanceInputError('Không tìm thấy buổi điểm danh.',404);
+      if(session.status==='ACTIVE')throw new AttendanceInputError('Hãy kết thúc buổi họp trước khi xóa.',409);
+      await tx.attendanceSession.delete({where:{id}});
     });
+    await broadcastSessionUpdate(id,{type:'SESSION_DELETED'});
 
     return NextResponse.json({ success: true });
   } catch (error) {
+    if(error instanceof AttendanceInputError)return NextResponse.json({success:false,error:error.message},{status:error.status});
     console.error('[api/attendance/sessions/[id] DELETE] Error:', error);
     return NextResponse.json(
       { success: false, error: 'Không thể xóa buổi điểm danh.' },

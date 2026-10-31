@@ -1,0 +1,31 @@
+.monitoring-dashboard {
+  color-scheme: light;
+  background: #f8fafc;
+  font-variant-numeric: tabular-nums;
+}
+.monitoring-dashboard.is-fullscreen,
+.monitoring-dashboard:fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  width: 100%;
+  height: 100dvh;
+  margin: 0;
+  padding: 1rem;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: #f8fafc;
+}
+.monitoring-dashboard :is(button, input, select, textarea):focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+.monitoring-dashboard.is-fullscreen > header {
+  position: sticky;
+  top: -1rem;
+  z-index: 10;
+  padding-block: .75rem;
+  background: #f8fafc;
+}
+.monitoring-dashboard > nav,
+.monitoring-dashboard > [role="tablist"] { margin-top: .75rem; }

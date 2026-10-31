@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { authenticateRequest } from '@/lib/auth';
 import { normalizeRedirectUrl } from '@/lib/redirect-url';
+import { CampaignHotspotError, validateCampaignTarget } from '@/lib/network/campaign-hotspot';
 
 async function handleGET(req: NextRequest) {
   const user = authenticateRequest(req);
@@ -70,24 +71,26 @@ async function handlePOST(req: NextRequest) {
       );
     }
 
+    const target = process.env.CAMPAIGN_HOTSPOT_ENABLED === 'true' ? await validateCampaignTarget({ ssid, unifiSite, wlanConfId }) : null;
     const campaign = await prisma.campaign.create({
       data: {
         name,
-        ssid,
+        ssid: target?.ssid || ssid,
         templateId,
         startTime: new Date(startTime),
         endTime: new Date(endTime),
         active: active ?? true,
         portalEnabled: portalEnabled ?? false,
         redirectUrl: normalizedRedirectUrl,
-        wlanConfId: wlanConfId || null,
-        unifiSite: unifiSite || 'default',
+        wlanConfId: target?.wlanConfId || wlanConfId || null,
+        unifiSite: target?.unifiSite || unifiSite || 'default',
       },
       include: { template: { select: { id: true, name: true } } },
     });
 
     return NextResponse.json({ success: true, data: campaign }, { status: 201 });
   } catch (error) {
+    if (error instanceof CampaignHotspotError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     console.error('Campaigns POST error:', error);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },

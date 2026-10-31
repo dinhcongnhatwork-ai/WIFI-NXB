@@ -77,11 +77,11 @@ test("time-series crosshairs synchronize after asynchronous history arrives", as
   });
   await page.goto("/admin/monitor");
   const cpu = page.getByRole("img", {
-    name: "Biểu đồ lịch sử CPU (%)",
+    name: "Biểu đồ lịch sử CPU (%) · Tải vi xử lý",
     exact: true,
   });
   const memory = page.getByRole("img", {
-    name: "Biểu đồ lịch sử RAM (%)",
+    name: "Biểu đồ lịch sử RAM (%) · Dung lượng bộ nhớ",
     exact: true,
   });
   await expect(cpu.locator("canvas").first()).toBeVisible();

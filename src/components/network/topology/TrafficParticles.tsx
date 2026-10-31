@@ -10,11 +10,14 @@ import {
 } from "react";
 import { useStore, useViewport } from "@xyflow/react";
 import { particleCount, particleDuration } from "./model";
+import { sampleTrafficPath } from "./traffic-path-sampling";
 type Point = { x: number; y: number };
 type Lane = { count: number; duration: number };
 type ParticleLink = {
   id: string;
   path: string;
+  reverse?: boolean;
+  length: number;
   points: Point[];
   downloadPoints?: Point[];
   uploadPoints?: Point[];
@@ -28,6 +31,7 @@ type Registration = {
   uploadPath?: string;
   downloadBps?: number | null;
   uploadBps?: number | null;
+  reverse?: boolean;
 };
 type Registry = {
   entries: Map<string, ParticleLink>;
@@ -60,11 +64,7 @@ export function TrafficParticleProvider({ children }: { children?: ReactNode }) 
         "path",
       );
       path.setAttribute("d", value);
-      const length = path.getTotalLength();
-      const points = Array.from({ length: 97 }, (_, index) => {
-        const point = path.getPointAtLength((length * index) / 96);
-        return { x: point.x, y: point.y };
-      });
+      const points = sampleTrafficPath(path);
       if (cache.size >= 512) cache.delete(cache.keys().next().value!);
       cache.set(value, points);
       return points;
@@ -80,17 +80,20 @@ export function TrafficParticleProvider({ children }: { children?: ReactNode }) 
       snapshot: () => version,
       register: (entry) => {
         const download = {
-          count: particleCount(entry.downloadBps),
+          count: Math.min(3, particleCount(entry.downloadBps)),
           duration: particleDuration(entry.downloadBps || 0),
         };
         const upload = {
-          count: particleCount(entry.uploadBps),
+          count: Math.min(3, particleCount(entry.uploadBps)),
           duration: particleDuration(entry.uploadBps || 0),
         };
         if (!download.count && !upload.count) return () => {};
+        const points = pointsFor(entry.path);
+        const length = points.reduce((sum, p, index) => index ? sum + Math.hypot(p.x - points[index-1].x, p.y - points[index-1].y) : 0, 0);
         const registered = {
           ...entry,
-          points: pointsFor(entry.path),
+          points,
+          length,
           download,
           upload,
           downloadPoints: entry.downloadPath
@@ -157,129 +160,41 @@ export function TrafficParticleOverlay() {
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       context.clearRect(0, 0, width, height);
       const view = viewportRef.current;
-      // Render glowing cyber energy photons with dual-channel perpendicular lane offset
-      for (let direction = 0; direction < 2; direction++) {
-        const isDown = direction === 0;
-        // isDown = Download (Inbound / Vào - Cyan), !isDown = Upload (Outbound / Ra - Emerald)
-        const coreColor = "#ffffff";
-        const primaryColor = isDown ? "#38bdf8" : "#34d399";
-        const glowColor = isDown ? "rgba(14, 165, 233, 0.42)" : "rgba(16, 185, 129, 0.42)";
-        
-        for (const entry of currentEntries) {
-          const lane = isDown ? entry.download : entry.upload;
-          if (!lane.count) continue;
-          const directional = isDown ? entry.downloadPoints : entry.uploadPoints;
-          const points = directional || entry.points;
-          if (!points || points.length < 2) continue;
-          
+      for (const entry of currentEntries) {
+        for (let direction = 0; direction < 2; direction++) {
+          const receive = direction === 0;
+          const forward = receive !== !!entry.reverse;
+          const lane = receive ? entry.download : entry.upload;
+          const points = (receive ? entry.downloadPoints : entry.uploadPoints) || entry.points;
+          if (!lane.count || points.length < 2) continue;
           const phase = (now / (lane.duration * 1000)) % 1;
-          const radius = Math.max(2.2, Math.min(5, 2.6 * view.zoom));
-          const haloRadius = radius * 2.5;
-
-          // Lane offset: +2.2px for download (lane 1), -2.2px for upload (lane 2)
-          const laneOffsetDist = isDown ? 2.2 : -2.2;
-
+          // Short, solid strokes follow the cable; no circles, glow or per-link animation nodes.
+          const trail = Math.min(0.18, 32 / Math.max(1, entry.length * view.zoom));
+          context.strokeStyle = receive ? "#2563eb" : "#10b981";
+          context.lineWidth = 2.5;
+          context.lineCap = "round";
+          const pointAt = (progress: number) => {
+            const index = Math.max(0, Math.min(1, progress)) * (points.length - 1);
+            const low = Math.floor(index), high = Math.min(points.length - 1, low + 1);
+            const fraction = index - low;
+            return {
+              x: (points[low].x + (points[high].x - points[low].x) * fraction) * view.zoom + view.x,
+              y: (points[low].y + (points[high].y - points[low].y) * fraction) * view.zoom + view.y,
+            };
+          };
           for (let i = 0; i < lane.count; i++) {
             const progress = (phase + i / lane.count) % 1;
-            // Download travels 0 -> 1 (Source to Target, downwards)
-            // Upload travels 1 -> 0 (Target to Source, upwards)
-            const normalized = isDown ? progress : 1 - progress;
-            const index = normalized * (points.length - 1);
-            const low = Math.floor(index);
-            const high = Math.min(points.length - 1, low + 1);
-            const fraction = index - low;
-            const a = points[low];
-            const b = points[high];
-
-            // Calculate tangent and normal unit vector
-            const segDx = b.x - a.x;
-            const segDy = b.y - a.y;
-            const segLen = Math.hypot(segDx, segDy);
-            let nx = 0;
-            let ny = 0;
-            if (segLen > 0.0001) {
-              nx = -segDy / segLen;
-              ny = segDx / segLen;
-            } else if (low > 0) {
-              const prevA = points[low - 1];
-              const pDx = b.x - prevA.x;
-              const pDy = b.y - prevA.y;
-              const pLen = Math.hypot(pDx, pDy);
-              if (pLen > 0.0001) {
-                nx = -pDy / pLen;
-                ny = pDx / pLen;
-              }
-            }
-
-            const offX = nx * laneOffsetDist;
-            const offY = ny * laneOffsetDist;
-            
-            const x = (a.x + segDx * fraction + offX) * view.zoom + view.x;
-            const y = (a.y + segDy * fraction + offY) * view.zoom + view.y;
-
-            if (
-              x + haloRadius < 0 ||
-              x - haloRadius > width ||
-              y + haloRadius < 0 ||
-              y - haloRadius > height
-            ) {
-              continue;
-            }
-
-            // Draw trailing comet tail behind the particle's direction of movement
-            // For isDown (moving forward 0 -> 1), tail was at smaller normalized (normalized - delta)
-            // For !isDown (moving backward 1 -> 0), tail was at larger normalized (normalized + delta)
-            const tailNorm = isDown
-              ? Math.max(0, normalized - 0.035)
-              : Math.min(1, normalized + 0.035);
-            const tailIdx = tailNorm * (points.length - 1);
-            const tLow = Math.floor(tailIdx);
-            const tHigh = Math.min(points.length - 1, tLow + 1);
-            const tFrac = tailIdx - tLow;
-            const tA = points[tLow];
-            const tB = points[tHigh];
-            const tDx = tB.x - tA.x;
-            const tDy = tB.y - tA.y;
-            const tLen = Math.hypot(tDx, tDy);
-            let tNx = 0;
-            let tNy = 0;
-            if (tLen > 0.0001) {
-              tNx = -tDy / tLen;
-              tNy = tDx / tLen;
-            } else {
-              tNx = nx;
-              tNy = ny;
-            }
-            const tOffX = tNx * laneOffsetDist;
-            const tOffY = tNy * laneOffsetDist;
-
-            const tailX = (tA.x + tDx * tFrac + tOffX) * view.zoom + view.x;
-            const tailY = (tA.y + tDy * tFrac + tOffY) * view.zoom + view.y;
-
-            // Comet tail stroke
+            const head = pointAt(forward ? progress : 1 - progress);
+            const tail = pointAt(forward ? Math.max(0, progress - trail) : Math.min(1, 1 - progress + trail));
+            if (Math.max(head.x,tail.x) < -40 || Math.min(head.x,tail.x) > width+40 || Math.max(head.y,tail.y) < -40 || Math.min(head.y,tail.y) > height+40) continue;
             context.beginPath();
-            context.moveTo(tailX, tailY);
-            context.lineTo(x, y);
-            context.strokeStyle = glowColor;
-            context.lineWidth = radius * 1.5;
-            context.lineCap = "round";
+            context.moveTo(tail.x, tail.y);
+            for (let step = 1; step <= 6; step++) {
+              const at = Math.max(0, progress - trail * (1 - step / 6));
+              const point = pointAt(forward ? at : 1 - at);
+              context.lineTo(point.x, point.y);
+            }
             context.stroke();
-
-            // Outer soft radial glow
-            const glowGrad = context.createRadialGradient(x, y, 0, x, y, haloRadius);
-            glowGrad.addColorStop(0, primaryColor);
-            glowGrad.addColorStop(0.5, glowColor);
-            glowGrad.addColorStop(1, "rgba(0, 0, 0, 0)");
-            context.fillStyle = glowGrad;
-            context.beginPath();
-            context.arc(x, y, haloRadius, 0, Math.PI * 2);
-            context.fill();
-
-            // Bright white-hot energy core
-            context.fillStyle = coreColor;
-            context.beginPath();
-            context.arc(x, y, radius * 0.75, 0, Math.PI * 2);
-            context.fill();
           }
         }
       }
@@ -323,8 +238,8 @@ export function TrafficParticleOverlay() {
       role="img"
       aria-label={
         links
-          ? `Lưu lượng trực tiếp: ${links} liên kết, ${particles} hạt`
-          : "Lưu lượng trực tiếp: không có hạt đang chạy"
+          ? `Lưu lượng trực tiếp: ${links} liên kết, ${particles} vệt line`
+          : "Lưu lượng trực tiếp: không có line đang chạy"
       }
       className="pointer-events-none absolute inset-0 z-[1]"
       style={{ width, height, transform: "translateZ(0)", contain: "strict" }}

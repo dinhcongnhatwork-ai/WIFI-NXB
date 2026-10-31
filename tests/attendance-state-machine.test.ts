@@ -76,7 +76,7 @@ describe('Attendance State Machine (PLAN.MD rules)', () => {
     expect(result.logEvents.some((e) => e.type === 'ROAM_AP')).toBe(true);
   });
 
-  it('does NOT disconnect on first miss (prevents packet drop / inform latency false positives)', () => {
+  it('marks first healthy-controller miss as lost WiFi under the immediate-detection policy', () => {
     const now = new Date('2026-09-09T08:15:00Z');
 
     const result = evaluateRegistrationState(
@@ -89,10 +89,10 @@ describe('Attendance State Machine (PLAN.MD rules)', () => {
       true
     );
 
-    expect(result.newStatus).toBe('PRESENT'); // Still PRESENT on first miss
+    expect(result.newStatus).toBe('TEMPORARY_ABSENT'); // Controller snapshot is authoritative
     expect(result.consecutiveMissCount).toBe(1);
     expect(result.absentStartedAt).toEqual(now); // Absence clock starts
-    expect(result.isNewlyDisconnected).toBe(false);
+    expect(result.isNewlyDisconnected).toBe(true);
   });
 
   it('transitions to TEMPORARY_ABSENT on second consecutive miss', () => {

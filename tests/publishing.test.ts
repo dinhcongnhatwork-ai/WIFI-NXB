@@ -31,11 +31,14 @@ test('drafts allow incomplete content but reject malformed geometry and media', 
 });
 test('public portal returns only the immutable snapshot', async () => {
   const original = prisma.campaign.findFirst;
-  prisma.campaign.findFirst = (async () => ({ id: 'campaign', redirectUrl: null, template: { id: 'template', layoutJson: { secretDraft: true }, publishedRevision: { layoutJson: { published: true } } } })) as unknown as typeof original;
+  // The portal intentionally rejects unknown layouts and falls back to a preset.
+  // A valid snapshot verifies isolation instead of exercising that fallback.
+  const published = createDocument();
+  prisma.campaign.findFirst = (async () => ({ id: 'campaign', redirectUrl: null, template: { id: 'template', layoutJson: { secretDraft: true }, publishedRevision: { layoutJson: published } } })) as unknown as typeof original;
   try {
     const response = await getPortal(new NextRequest('http://localhost/api/portal'));
     const body = await response.json();
-    assert.deepEqual(body.data.layout, { published: true });
+    assert.deepEqual(body.data.layout, published);
     assert.equal(JSON.stringify(body).includes('secretDraft'), false);
   } finally { prisma.campaign.findFirst = original; }
 });

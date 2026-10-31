@@ -60,6 +60,7 @@ const pending = new Map<string, Promise<Topology>>();
 export async function getSampledTopology(
   provider: "UNIFI" | "MIKROTIK",
   req: Request,
+  options: { infrastructureOnly?: boolean } = {},
 ): Promise<Topology> {
   const connection = await resolveConnection(provider, req);
   const query = new URL(req.url).searchParams;
@@ -70,9 +71,18 @@ export async function getSampledTopology(
         String(connection.config.site || "default")
       : "";
   const scope = createHash("sha256")
-    .update(JSON.stringify([provider, connection.id, connection.baseUrl, site]))
+    .update(
+      JSON.stringify([
+        provider,
+        connection.id,
+        connection.baseUrl,
+        site,
+        connection.config,
+        options.infrastructureOnly ? "infrastructure-only-v1" : "full",
+      ]),
+    )
     .digest("hex");
-  const key = `topology:v2:${scope}`;
+  const key = `topology:v3:${scope}`;
   if (pending.has(key)) return pending.get(key)!;
   const work = (async () => {
     let cacheAvailable = true;
@@ -108,9 +118,22 @@ export async function getSampledTopology(
         const client = await getUnifiClientFromRequest(req);
         await client.login();
         topology = await client.getTopology();
+        const inferred = topology.nodes.filter(node => node.meta?.inferredFromGatewayMac && node.mac);
+        if (inferred.length) {
+          const { observedGatewayAddresses } = await import('./gateway-address');
+          const addresses = await observedGatewayAddresses(req);
+          for (const gateway of inferred) {
+            const observed = addresses.get(gateway.mac!.toLowerCase());
+            if (!observed) continue;
+            gateway.meta = {...gateway.meta, controllerGatewayIp: gateway.ip, gatewayAddressSource: 'RouterOS /ip/address · matched interface MAC', gatewayAddressObservedAt: observed.observedAt, gatewayConnectionId: observed.connectionId, model: observed.model};
+            gateway.ip = observed.ip;
+            gateway.status = 'online';
+          }
+        }
       } else {
-        const { createMikrotikClientFromRequest } =
-          await import("@/lib/mikrotik");
+        const { createMikrotikClientFromRequest } = await import(
+          "@/lib/mikrotik"
+        );
         const client = await createMikrotikClientFromRequest(req);
         const warnings: string[] = [];
         const optional = async (path: string) => {
@@ -132,19 +155,27 @@ export async function getSampledTopology(
           addresses,
           arp,
           leases,
+          resource,
         ] = await Promise.all([
           client.rawGet("/system/identity"),
           client.rawGet("/interface"),
           optional("/ip/neighbor"),
-          optional("/interface/bridge/host"),
+          options.infrastructureOnly ? [] : optional("/interface/bridge/host"),
           optional("/interface/bridge/port"),
-          optional("/ip/hotspot/active"),
+          options.infrastructureOnly ? [] : optional("/ip/hotspot/active"),
           optional("/ip/address"),
-          client.getArpEntries().catch(() => optional("/ip/arp")),
-          client.getDhcpLeases().catch(() => optional("/ip/dhcp-server/lease")),
+          options.infrastructureOnly ? [] : client.getArpEntries().catch(() => optional("/ip/arp")),
+          options.infrastructureOnly ? [] : client.getDhcpLeases().catch(() => optional("/ip/dhcp-server/lease")),
+          optional("/system/resource"),
         ]);
         topology = buildMikrotikTopology(
-          (Array.isArray(identity) ? identity[0] : identity) || {},
+          {
+            ...((Array.isArray(identity) ? identity[0] : identity) || {}),
+            ...((Array.isArray(resource) ? resource[0] : resource) || {}),
+            name:
+              (Array.isArray(identity) ? identity[0] : identity)?.name ||
+              connection.name,
+          },
           interfaces as any[],
           neighbors,
           hosts,
@@ -156,6 +187,34 @@ export async function getSampledTopology(
           arp,
           leases,
         );
+      }
+      if (provider === "MIKROTIK") {
+        const root = topology.nodes.find((node) => node.id === "router:local");
+        if (root) {
+          const role = connection.config.deviceRole;
+          root.type =
+            role === "core-switch" || role === "access-switch"
+              ? "switch"
+              : "gateway";
+          root.status = "online";
+          root.meta = {
+            ...root.meta,
+            deviceRole: role || "router",
+            connectionId: connection.id,
+            provider: "mikrotik",
+            model: root.meta?.model || connection.config.model,
+            location: connection.config.location,
+            portTable: topology.nodes
+              .filter((node) => ["interface", "bridge"].includes(node.type))
+              .map((node) => ({
+                name: node.name,
+                status: node.status,
+                mac: node.mac,
+                ip: node.ip,
+                traffic: node.traffic,
+              })),
+          };
+        }
       }
       let previous: TopologyTraffic | undefined;
       if (cacheAvailable) {

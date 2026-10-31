@@ -4,6 +4,9 @@ import { isVideoWatched } from '@/lib/redis';
 import { hasPublishedGate, parseDevice, PortalContextError, requiresSignedPortalSession, resolvePortalAccess } from '@/lib/attendance/runtime';
 import { normalizeRedirectUrl, resolvePortalFallbackUrl } from '@/lib/redirect-url';
 
+import {GuestClientPendingError} from '@/lib/network/campaign-hotspot-policy';
+import { authorizeUnifiPortal, CampaignHotspotError, isUnifiPortalRequest } from '@/lib/network/campaign-hotspot';
+
 export const dynamic = 'force-dynamic';
 
 function normalizeHostValue(value: string | undefined): string {
@@ -149,6 +152,9 @@ export async function POST(req: NextRequest) {
     );
     const campaignId = firstString(body?.campaignId, body?.['campaign-id']);
     const portalSessionId = firstString(body?.portalSessionId, body?.sessionId);
+    const unifiSite = firstString(body?.unifiSite, body?.site);
+    const unifiRequest = isUnifiPortalRequest(portalSessionId, unifiSite);
+    if (unifiRequest && (!portalSessionId || !mac)) throw new CampaignHotspotError('Signed UniFi portal session required');
     const requestRedirectUrl = normalizeRedirectUrl(firstString(body?.redirectUrl));
 
     if (!mac && !trial && !linkLogin) {
@@ -163,7 +169,7 @@ export async function POST(req: NextRequest) {
 
     if (!portalSessionId && !ssid) return NextResponse.json({ success: false, error: 'Signed portal session required' }, { status: 403 });
     const device = body?.device ? parseDevice(body.device) : undefined;
-    const runtime = await resolvePortalAccess(prisma, { ssid, mac, device, apMac: firstString(body?.apMac, body?.['ap-mac']), campaignId }, portalSessionId);
+    const runtime = await resolvePortalAccess(prisma, { ssid, mac, device, unifiSite, apMac: firstString(body?.apMac, body?.['ap-mac']), campaignId }, portalSessionId);
     if (!runtime) return NextResponse.json({ success: false, error: 'Invalid or expired portal session' }, { status: 400 });
     if (!runtime.effectiveTemplateId) return NextResponse.json({ success: false, error: 'No published portal is configured for this network' }, { status: 403 });
     if (runtime.attendanceAmbiguous) return NextResponse.json({ success: false, error: 'Attendance network context is ambiguous' }, { status: 403 });
@@ -174,9 +180,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Video not watched' }, { status: 403 });
       }
     }
+    if (unifiRequest && hasPublishedGate(runtime.layout, 'attendance_gate', runtime.device) && !runtime.attendanceSession) {
+      return NextResponse.json({ success: false, error: 'Effective attendance session required' }, { status: 403 });
+    }
     if (runtime.attendanceSession && hasPublishedGate(runtime.layout, 'attendance_gate', runtime.device) && !runtime.isAlreadyRegistered) {
       return NextResponse.json({ success: false, error: 'Attendance registration required' }, { status: 403 });
     }
+
+    const unifiAuthorization = unifiRequest ? await authorizeUnifiPortal(portalSessionId) : null;
 
     // Upsert wifi user
     if (mac) {
@@ -206,6 +217,8 @@ export async function POST(req: NextRequest) {
       normalizeRedirectUrl(campaign?.redirectUrl) ||
       resolvePortalFallbackUrl(process.env.NEXT_PUBLIC_APP_URL);
 
+    if (unifiAuthorization) return NextResponse.json({ success: true, data: unifiAuthorization });
+
     const trustedHosts = getTrustedHotspotHosts();
 
     const trialRedirect = buildHotspotLoginRedirect(trial, finalRedirect, trustedHosts);
@@ -233,6 +246,8 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   } catch (error) {
+    if(error instanceof GuestClientPendingError)return NextResponse.json({success:false,pending:true,code:'UNIFI_AUTHORIZING',error:error.message},{status:202,headers:{'Cache-Control':'no-store','Retry-After':'2'}});
+    if (error instanceof CampaignHotspotError) return NextResponse.json({ success: false, error: error.message }, { status: error.status });
     if (error instanceof PortalContextError) return NextResponse.json({ success: false, error: error.message }, { status: 400 });
     console.error('Login error:', error);
     return NextResponse.json(

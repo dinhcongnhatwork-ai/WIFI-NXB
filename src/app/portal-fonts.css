@@ -1,0 +1,37 @@
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url(/fonts/be-vietnam-pro/be-vietnam-pro-0.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url(/fonts/be-vietnam-pro/be-vietnam-pro-1.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url(/fonts/be-vietnam-pro/be-vietnam-pro-2.ttf) format('truetype');
+}
+@font-face {
+  font-family: 'Be Vietnam Pro';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url(/fonts/be-vietnam-pro/be-vietnam-pro-3.ttf) format('truetype');
+}
+
+.portal-page { font-family: 'Be Vietnam Pro', sans-serif; }
+.portal-page button:focus-visible, .portal-flow input:focus-visible, .portal-flow textarea:focus-visible, .portal-flow select:focus-visible { outline: 3px solid #3891b4; outline-offset: 3px; }
+.portal-flow button { transition: opacity 160ms, transform 160ms; }
+.portal-flow button:not(:disabled):active { transform: translateY(1px); }
+.portal-flow button:disabled { cursor: default; }
+.portal-image-slider { background: #edf0ef; }
+.portal-image-slider button { touch-action: manipulation; }
+@media (prefers-reduced-motion: reduce) { .portal-image-slider img, .portal-flow button { transition: none !important; } }

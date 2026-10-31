@@ -104,11 +104,19 @@ export function sampleTraffic(
 }
 /** Controller station counters are AP-facing: tx is download to the station. */
 export function unifiCounters(row: Record<string, any>): TrafficCounters {
+  const isDeviceOffline =
+    row.state === 0 ||
+    row.status === "offline" ||
+    row.status === "disconnected";
   return {
-    downloadBytes: row.txBytes ?? row.tx_bytes,
-    uploadBytes: row.rxBytes ?? row.rx_bytes,
-    downloadBytesPerSecond: row["tx_bytes-r"],
-    uploadBytesPerSecond: row["rx_bytes-r"],
+    downloadBytes: row.txBytes ?? row.tx_bytes ?? row.uplink?.rx_bytes,
+    uploadBytes: row.rxBytes ?? row.rx_bytes ?? row.uplink?.tx_bytes,
+    downloadBytesPerSecond: isDeviceOffline
+      ? 0
+      : (row["tx_bytes-r"] ?? row.uplink?.["rx_bytes-r"]),
+    uploadBytesPerSecond: isDeviceOffline
+      ? 0
+      : (row["rx_bytes-r"] ?? row.uplink?.["tx_bytes-r"]),
     sessionId:
       row.assocTime || row.assoc_time
         ? String(row.assocTime ?? row.assoc_time)
@@ -133,12 +141,15 @@ export function mikrotikCounters(
 }
 
 /** RX on the child uplink is traffic arriving from its parent (download). */
-export function unifiUplinkCounters(row: Record<string, any>): TrafficCounters {
+export function unifiUplinkCounters(
+  row: Record<string, any>,
+  offline = false,
+): TrafficCounters {
   return {
     downloadBytes: row.rxBytes ?? row.rx_bytes,
     uploadBytes: row.txBytes ?? row.tx_bytes,
-    downloadBytesPerSecond: row["rx_bytes-r"],
-    uploadBytesPerSecond: row["tx_bytes-r"],
+    downloadBytesPerSecond: offline ? 0 : row["rx_bytes-r"],
+    uploadBytesPerSecond: offline ? 0 : row["tx_bytes-r"],
   };
 }
 export function hasTrafficMeasurement(counters: TrafficCounters): boolean {

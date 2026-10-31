@@ -70,7 +70,7 @@ export function evaluateRegistrationState(
   isControllerHealthy = true
 ): StateTransitionResult {
   const normTargetAps = targetApMacs.map((m) => m.toLowerCase().trim());
-  const normTargetSsid = targetSsid.toLowerCase().trim();
+  const normTargetSsid = targetSsid.trim();
 
   // If controller is unhealthy/error, move to or maintain UNKNOWN without adding to present or absent
   if (!isControllerHealthy) {
@@ -87,11 +87,12 @@ export function evaluateRegistrationState(
       deltaUnknownSeconds: 10,
       newWarningCount: currentState.warningCount,
       shouldCloseInterval: isFirstUnknown ? { leftAt: now } : undefined,
+      shouldOpenInterval: isFirstUnknown ? { status: 'UNKNOWN', joinedAt: now, apMac: currentState.currentApMac } : undefined,
       logEvents: isFirstUnknown
         ? [
             {
               type: 'SYSTEM_SYNC',
-              message: `Mất liên lạc với UniFi Controller. Trạng thái người tham dự chuyển sang Không xác định.`,
+              message: `Chưa đủ dữ liệu từ UniFi Controller/AP để xác nhận hiện diện. Tạm chuyển sang Chưa xác định.`,
               details: { previousStatus: currentState.status },
             },
           ]
@@ -101,7 +102,7 @@ export function evaluateRegistrationState(
 
   // Check if client was observed on one of our TARGET APs and TARGET SSID
   const observedAp = observedClient?.apMac?.toLowerCase().trim();
-  const observedSsid = observedClient?.ssid?.toLowerCase().trim();
+  const observedSsid = observedClient?.ssid?.trim();
 
   const isPresentOnTarget =
     Boolean(observedClient) &&
@@ -118,6 +119,7 @@ export function evaluateRegistrationState(
     let newStatus: AttendanceRegistrationStatus = 'PRESENT';
     let shouldOpenInterval: StateTransitionResult['shouldOpenInterval'];
     let shouldCloseInterval: StateTransitionResult['shouldCloseInterval'];
+    if (currentState.status !== 'PRESENT') shouldCloseInterval = { leftAt: now };
 
     // Roaming check: AP changed among target APs
     if (currentState.currentApMac && currentState.currentApMac.toLowerCase() !== apMac?.toLowerCase()) {
@@ -186,34 +188,23 @@ export function evaluateRegistrationState(
   // CASE 2: Client IS NOT DETECTED on target AP
   // =========================================================================
   const nextMissCount = currentState.consecutiveMissCount + 1;
-  const absentStarted = currentState.absentStartedAt || now;
+  const absentStarted = currentState.status === 'UNKNOWN' ? now : currentState.absentStartedAt || now;
 
   let newStatus: AttendanceRegistrationStatus = currentState.status;
   let newWarningCount = currentState.warningCount;
   let shouldCloseInterval: StateTransitionResult['shouldCloseInterval'];
   let isNewlyDisconnected = false;
 
-  // Grace period check: If attendee was confirmed present very recently (within 25s),
-  // do not trigger disconnect yet (absorbs AP inform cycle latency right after portal submission)
-  const secondsSinceLastSeen = currentState.lastSeenAt
-    ? Math.floor((now.getTime() - new Date(currentState.lastSeenAt).getTime()) / 1000)
-    : 999;
-  const isWithinRecentGrace = secondsSinceLastSeen < 25;
-
-  // Confirmation threshold: require at least 2 consecutive misses (~6s of confirmed absence)
-  // and past initial grace period to avoid sub-second false positives
-  if (currentState.status === 'PRESENT') {
-    if (nextMissCount >= 2 && !isWithinRecentGrace) {
-      newStatus = 'TEMPORARY_ABSENT';
-      shouldCloseInterval = { leftAt: absentStarted };
-      isNewlyDisconnected = true;
-
-      logEvents.push({
-        type: 'DISCONNECT',
-        message: `${currentState.displayName} đã mất kết nối / rời khỏi phòng họp.`,
-        details: { absentStartedAt: absentStarted.toISOString(), primaryMac: currentState.primaryMac },
-      });
-    }
+  // A fresh, successful Controller snapshot is authoritative. Only enrollment gets
+  // a short grace while guest authorization propagates; established clients leave immediately.
+  const enrollmentGrace = !currentState.currentApMac && currentState.status === 'PRESENT' &&
+    !!currentState.lastSeenAt && now.getTime() - new Date(currentState.lastSeenAt).getTime() < 6000 && !observedClient;
+  if (enrollmentGrace) return { registrationId:currentState.id,newStatus:'PRESENT',currentApMac:currentState.currentApMac,lastSeenAt:currentState.lastSeenAt,absentStartedAt:null,consecutiveMissCount:nextMissCount,deltaPresentSeconds:0,deltaAbsentSeconds:0,deltaUnknownSeconds:0,newWarningCount:currentState.warningCount,logEvents:[] };
+  if (currentState.status === 'PRESENT' || currentState.status === 'UNKNOWN') {
+    newStatus = 'TEMPORARY_ABSENT';
+    shouldCloseInterval = { leftAt: absentStarted };
+    isNewlyDisconnected = true;
+    logEvents.push({type:'DISCONNECT',message:`${currentState.displayName} đã mất kết nối WiFi trong phạm vi buổi họp.`,details:{absentStartedAt:absentStarted.toISOString(),primaryMac:currentState.primaryMac}});
   }
 
   // Calculate elapsed absent time from when disconnection started
@@ -248,6 +239,7 @@ export function evaluateRegistrationState(
     newWarningCount,
     shouldCloseInterval,
     isNewlyDisconnected,
+    shouldOpenInterval: isNewlyDisconnected ? {status:'ABSENT',joinedAt:absentStarted,apMac:currentState.currentApMac} : undefined,
     logEvents,
   };
 }

@@ -1,5 +1,6 @@
 services:
   backend:
+    image: ${APP_IMAGE:-wifimarketing:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -19,6 +20,7 @@ services:
       - minio
 
   frontend:
+    image: ${APP_IMAGE:-wifimarketing:local}
     build:
       context: .
       dockerfile: Dockerfile
@@ -36,6 +38,26 @@ services:
     depends_on:
       - backend
       - minio
+
+  hotspot-entry:
+    image: node:20-bullseye-slim
+    container_name: wifi-marketing-hotspot-entry
+    restart: unless-stopped
+    network_mode: host
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PORTAL_PUBLIC_URL: https://solutionai.com.vn
+      PORTAL_ENTRY_HOST: 192.168.1.253
+      PORTAL_ENTRY_PORT: '80'
+    volumes:
+      - ./deploy/hotspot-entry.mjs:/app/hotspot-entry.mjs:ro
+    command: node /app/hotspot-entry.mjs
 
   postgres:
     image: postgres:16-alpine

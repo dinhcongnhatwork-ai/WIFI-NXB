@@ -1,360 +1,103 @@
 import { prisma } from '@/lib/prisma';
+import { redis } from '@/lib/redis';
 import { UnifiClient } from '@/lib/unifi';
-import { createMikrotikClientFromRequest } from '@/lib/mikrotik';
 import { getUnifiConfig } from '@/lib/settings';
-import Redis from 'ioredis';
-import {
-  evaluateRegistrationState,
-  CurrentRegistrationState,
-  ObservedClient,
-} from './state-machine';
-import { DEFAULT_WARNING_THRESHOLD_MINUTES } from './constants';
+import { evaluateRegistrationState, type CurrentRegistrationState } from './state-machine';
+import { lockAttendanceSession } from './locking';
+import { normalizedMac, observedClients, onlineAccessPoint, attendanceDurations } from './observations';
+import { writeAttendanceSync, bestEffortSync } from './sync-health';
 
-let redisPublisher: Redis | null = null;
-function getRedisPublisher(): Redis | null {
-  if (!redisPublisher) {
-    try {
-      redisPublisher = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', {
-        maxRetriesPerRequest: 1,
-        lazyConnect: true,
-      });
-      redisPublisher.connect().catch((err) => {
-        console.warn('[attendance-monitor] Redis connection warning:', err.message);
-      });
-    } catch {
-      redisPublisher = null;
-    }
-  }
-  return redisPublisher;
+export async function broadcastSessionUpdate(sessionId:string,payload:unknown) {
+  try { await bestEffortSync(redis.publish(`attendance:${sessionId}`,JSON.stringify(payload))); } catch {}
 }
-
-export async function broadcastSessionUpdate(sessionId: string, payload: any) {
-  const pub = getRedisPublisher();
-  if (pub) {
-    try {
-      await pub.publish(`attendance:${sessionId}`, JSON.stringify(payload));
-    } catch (e) {
-      // Redis error handled gracefully
-    }
-  }
+interface TickResult {activeSessionsCount:number;processedRegistrations:number;unregisteredClientsCount:number;timestamp:string}
+let pending:Promise<TickResult>|null=null;
+/** One source snapshot per site per cycle; viewers never create additional monitor loops. */
+export function runAttendanceMonitorTick():Promise<TickResult> {
+  if(pending)return pending;
+  const operation=monitorCycle(); pending=operation;
+  void operation.finally(()=>{if(pending===operation)pending=null;}).catch(()=>{});
+  return operation;
 }
-
-/**
- * Execute one cycle of attendance monitoring across all ACTIVE sessions.
- * Can be triggered via background interval or tick API.
- */
-export async function runAttendanceMonitorTick(): Promise<{
-  activeSessionsCount: number;
-  processedRegistrations: number;
-  unregisteredClientsCount: number;
-  timestamp: string;
-}> {
-  const now = new Date();
-
-  // Find all ACTIVE sessions
-  const activeSessions = await prisma.attendanceSession.findMany({
-    where: {
-      status: 'ACTIVE',
-    },
-    include: {
-      registrations: {
-        include: {
-          intervals: {
-            orderBy: { joinedAt: 'asc' },
-          },
-        },
-      },
-    },
-  });
-
-  if (activeSessions.length === 0) {
-    return {
-      activeSessionsCount: 0,
-      processedRegistrations: 0,
-      unregisteredClientsCount: 0,
-      timestamp: now.toISOString(),
-    };
-  }
-
-  // Fetch each configured meeting site independently; a failed source never counts as absence.
-  const observations=new Map<string,{rawClients:any[];rawDevices:any[];healthy:boolean}>();
-  const sites=Array.from(new Set(activeSessions.map(session=>session.unifiSite||'default')));
-  for(const site of sites){
-    try{
-      const config=await getUnifiConfig();
-      const client=new UnifiClient({...config,site});
+async function monitorCycle():Promise<TickResult> {
+  const sessions=await prisma.attendanceSession.findMany({where:{status:'ACTIVE'}});
+  const result:TickResult={activeSessionsCount:sessions.length,processedRegistrations:0,unregisteredClientsCount:0,timestamp:new Date().toISOString()};
+  if(!sessions.length)return result;
+  const sites=Array.from(new Set(sessions.map(s=>s.unifiSite || 'default')));
+  const observations=new Map<string,{clients:any[];devices:any[];healthy:boolean;sampledAt:Date}>();
+  await Promise.all(sites.map(async site=>{
+    try {
+      const config=await getUnifiConfig(); const client=new UnifiClient({...config,site});
       await client.login();
-      const [rawClients,rawDevices]=await Promise.all([client.getClients(),client.getDevices()]);
-      observations.set(site,{rawClients,rawDevices,healthy:true});
-    }catch(err){console.error('[attendance-monitor] UniFi site fetch error:',site,err);observations.set(site,{rawClients:[],rawDevices:[],healthy:false});}
-  }
-
-  let totalProcessedRegistrations = 0;
-  let totalUnregistered = 0;
-
-  for (const session of activeSessions) {
-    const observation=observations.get(session.unifiSite||'default');
-    const rawClients=observation?.rawClients||[],rawDevices=observation?.rawDevices||[];
-    const isControllerHealthy=observation?.healthy===true;
-    const targetApMacs = Array.isArray(session.targetApMacs)
-      ? (session.targetApMacs as string[]).map((m) => m.toLowerCase().trim())
-      : [];
-    const targetSsid = session.ssid.trim();
-    const warningThreshold = session.warningThresholdMinutes || DEFAULT_WARNING_THRESHOLD_MINUTES;
-
-    // Check if target APs are online on UniFi
-    let isSessionApHealthy = isControllerHealthy;
-    if (isControllerHealthy && targetApMacs.length > 0 && rawDevices.length > 0) {
-      const onlineApMacs = new Set(
-        rawDevices
-          .filter((d) => d.status === 'online' || d.state === 1 || d.isConnected === true)
-          .map((d) => (d.mac || '').toLowerCase().trim())
-      );
-      const anyTargetApOnline = targetApMacs.some((mac) => onlineApMacs.has(mac));
-      if (!anyTargetApOnline) {
-        isSessionApHealthy = false;
-      }
+      const [clients,devices]=await Promise.all([client.getClients(true),client.getDevices()]);
+      observations.set(site,{clients,devices,healthy:true,sampledAt:new Date()});
+    }catch(error){
+      console.warn('[attendance-monitor] Cannot observe site',site,error instanceof Error?error.message:'Controller unavailable');
+      observations.set(site,{clients:[],devices:[],healthy:false,sampledAt:new Date()});
     }
-
-    // Filter raw clients observed on this session's APs
-    const clientsOnTargetAps: ObservedClient[] = [];
-    const clientMapByMac = new Map<string, ObservedClient>();
-
-    for (const c of rawClients) {
-      const cMac = (c.mac || '').toLowerCase().trim();
-      const cAp = (c.apMac || c.ap_mac || '').toLowerCase().trim();
-      const cSsid = (c.ssid || c.essid || '').trim();
-
-      const item: ObservedClient = {
-        mac: cMac,
-        ip: c.ip || c.ipAddress,
-        apMac: cAp,
-        apName: c.apName || c.ap_name,
-        ssid: cSsid,
-        rssi: c.signal || c.rssi,
-      };
-
-      clientMapByMac.set(cMac, item);
-
-      // Is on target AP & SSID
-      if (
-        cMac &&
-        (targetApMacs.length === 0 || targetApMacs.includes(cAp)) &&
-        (!targetSsid || cSsid.toLowerCase() === targetSsid.toLowerCase())
-      ) {
-        clientsOnTargetAps.push(item);
-      }
-    }
-
-    const registeredMacSet = new Set<string>();
-
-    // Process each registered attendee in this session
-    for (const reg of session.registrations) {
-      totalProcessedRegistrations++;
-      const normPrimaryMac = reg.primaryMac.toLowerCase().trim();
-      registeredMacSet.add(normPrimaryMac);
-
-      const observed = clientMapByMac.get(normPrimaryMac);
-
-      const currentState: CurrentRegistrationState = {
-        id: reg.id,
-        primaryMac: reg.primaryMac,
-        displayName: reg.displayName,
-        identityValue: reg.identityValue,
-        status: reg.status as any,
-        currentApMac: reg.currentApMac,
-        lastSeenAt: reg.lastSeenAt,
-        absentStartedAt: reg.absentStartedAt,
-        consecutiveMissCount: reg.consecutiveMissCount,
-        totalPresentSeconds: reg.totalPresentSeconds,
-        totalAbsentSeconds: reg.totalAbsentSeconds,
-        totalUnknownSeconds: reg.totalUnknownSeconds,
-        warningCount: reg.warningCount,
-      };
-
-      const result = evaluateRegistrationState(
-        currentState,
-        observed,
-        targetApMacs,
-        targetSsid,
-        now,
-        warningThreshold,
-        isSessionApHealthy
-      );
-
-      // Handle Intervals first
-      let updatedIntervals = [...reg.intervals];
-      let openInterval = reg.intervals.find((i) => !i.leftAt);
-
-      if (result.shouldCloseInterval && openInterval) {
-        const duration = Math.max(
-          1,
-          Math.floor(
-            (result.shouldCloseInterval.leftAt.getTime() - new Date(openInterval.joinedAt).getTime()) / 1000
-          )
-        );
-        const closed = await prisma.attendanceInterval.update({
-          where: { id: openInterval.id },
-          data: {
-            leftAt: result.shouldCloseInterval.leftAt,
-            durationSeconds: duration,
-          },
-        });
-        updatedIntervals = updatedIntervals.map((i) => (i.id === openInterval!.id ? closed : i));
-        openInterval = undefined;
-      }
-
-      if (result.shouldOpenInterval) {
-        if (!openInterval) {
-          const created = await prisma.attendanceInterval.create({
-            data: {
-              registrationId: reg.id,
-              apMac: result.shouldOpenInterval.apMac,
-              joinedAt: result.shouldOpenInterval.joinedAt,
-              status: result.shouldOpenInterval.status,
-            },
-          });
-          updatedIntervals.push(created);
-          openInterval = created;
-        }
-      }
-
-      // Calculate exact totalPresentSeconds deterministically
-      let exactPresentSeconds = 0;
-      for (const intv of updatedIntervals) {
-        if (intv.leftAt) {
-          exactPresentSeconds +=
-            intv.durationSeconds ??
-            Math.max(
-              0,
-              Math.floor(
-                (new Date(intv.leftAt).getTime() - new Date(intv.joinedAt).getTime()) / 1000
-              )
-            );
-        } else if (result.newStatus === 'PRESENT') {
-          const ongoing = Math.max(
-            0,
-            Math.floor((now.getTime() - new Date(intv.joinedAt).getTime()) / 1000)
-          );
-          exactPresentSeconds += ongoing;
-        }
-      }
-
-      // Calculate exact totalAbsentSeconds deterministically
-      const effectiveFirstSeen = reg.firstSeenAt || (result.newStatus === 'PRESENT' ? now : null);
-      let exactAbsentSeconds = 0;
-      if (effectiveFirstSeen) {
-        const totalElapsed = Math.max(
-          0,
-          Math.floor((now.getTime() - new Date(effectiveFirstSeen).getTime()) / 1000)
-        );
-        exactAbsentSeconds = Math.max(0, totalElapsed - exactPresentSeconds);
-      }
-
-      // Perform DB updates with exact second counts
-      await prisma.attendanceRegistration.update({
-        where: { id: reg.id },
-        data: {
-          status: result.newStatus,
-          currentApMac: result.currentApMac,
-          firstSeenAt: reg.firstSeenAt || (result.newStatus === 'PRESENT' ? now : null),
-          lastSeenAt: result.lastSeenAt,
-          absentStartedAt: result.absentStartedAt,
-          consecutiveMissCount: result.consecutiveMissCount,
-          totalPresentSeconds: exactPresentSeconds,
-          totalAbsentSeconds: exactAbsentSeconds,
-          totalUnknownSeconds: 0,
-          warningCount: result.newWarningCount,
-          currentRssi: observed?.rssi || reg.currentRssi,
-        },
-      });
-
-      // Record logs
-      for (const event of result.logEvents) {
-        await prisma.attendanceLog.create({
-          data: {
-            sessionId: session.id,
-            registrationId: reg.id,
-            type: event.type,
-            message: event.message,
-            details: event.details || {},
-            createdAt: now,
-          },
-        });
-      }
-
-      // MikroTik Integration: Automatically remove DHCP IP Lease when user disconnects / leaves room
-      if (result.isNewlyDisconnected) {
-        try {
-          const mikrotikClient = await createMikrotikClientFromRequest();
-          const removeResult = await mikrotikClient.removeDhcpLeaseByMac(reg.primaryMac);
-          await mikrotikClient.removeAllHotspotActiveByMac(reg.primaryMac).catch(() => {});
-
-          await prisma.attendanceLog.create({
-            data: {
-              sessionId: session.id,
-              registrationId: reg.id,
-              type: 'SYSTEM_SYNC',
-              message:
-                removeResult.removedCount > 0
-                  ? `Đã thu hồi ${removeResult.removedCount} IP DHCP trên MikroTik cho thiết bị ${reg.displayName} (${reg.primaryMac}).`
-                  : `Hệ thống MikroTik xác nhận đã giải phóng IP DHCP cho thiết bị ${reg.displayName} (${reg.primaryMac}).`,
-              details: {
-                mac: reg.primaryMac,
-                action: 'REMOVE_DHCP_LEASE',
-                removedCount: removeResult.removedCount,
-              },
-              createdAt: now,
-            },
-          });
-        } catch (mkErr: any) {
-          console.warn(`[attendance-monitor] MikroTik DHCP removal error for ${reg.primaryMac}:`, mkErr.message);
-        }
-      }
-    }
-
-    // Process Unregistered Clients detected on target APs
-    for (const client of clientsOnTargetAps) {
-      if (!registeredMacSet.has(client.mac)) {
-        totalUnregistered++;
-        await prisma.attendanceUnregisteredClient.upsert({
-          where: {
-            sessionId_mac: {
-              sessionId: session.id,
-              mac: client.mac,
-            },
-          },
-          update: {
-            ip: client.ip || undefined,
-            apMac: client.apMac || undefined,
-            signal: client.rssi || undefined,
-            lastSeenAt: now,
-          },
-          create: {
-            sessionId: session.id,
-            mac: client.mac,
-            ip: client.ip,
-            apMac: client.apMac,
-            signal: client.rssi,
-            firstSeenAt: now,
-            lastSeenAt: now,
-          },
-        });
-      }
-    }
-
-    // Broadcast session update over Redis
-    await broadcastSessionUpdate(session.id, {
-      type: 'TICK_UPDATE',
-      sessionId: session.id,
-      timestamp: now.toISOString(),
+  }));
+  for(const candidate of sessions) {
+    const source=observations.get(candidate.unifiSite || 'default')!;
+    const now=source.sampledAt;
+    const devices=source.devices, online=new Set(devices.filter(onlineAccessPoint).map(d=>normalizedMac(d.mac)));
+    const targets=(Array.isArray(candidate.targetApMacs)?candidate.targetApMacs as string[]:[]).map(normalizedMac);
+    const clients=observedClients(source.clients,devices), byMac=new Map(clients.map(c=>[c.mac,c]));
+    const targetAps=(targets.length?targets:devices.filter(d=>d.type==='uap' || d.type==='ap').map(d=>normalizedMac(d.mac))).map(mac=>{
+      const d=devices.find(d=>normalizedMac(d.mac)===mac);
+      return {mac,name:d?.name || d?.model || mac,model:d?.model,status:online.has(mac)?'online':'offline'};
     });
+    const healthy=source.healthy && online.size>0 && (!targets.length || targets.every(mac=>online.has(mac)));
+    try { await prisma.$transaction(async tx=>{
+      await lockAttendanceSession(tx,candidate.id);
+      const session=await tx.attendanceSession.findUnique({where:{id:candidate.id},include:{registrations:{include:{intervals:{orderBy:{joinedAt:'asc'}}}}}});
+      if(!session || session.status!=='ACTIVE')return;
+      const ended=now>=session.endTime;
+      const cutoff=ended?session.endTime:now;
+      for(const reg of session.registrations) {
+        // Never overwrite a registration/device swap submitted after this source snapshot.
+        if(reg.updatedAt>now)continue;
+        const observed=byMac.get(normalizedMac(reg.primaryMac));
+        const knownAp=normalizedMac(observed?.apMac || reg.currentApMac);
+        const apHealthy=(!observed || (!!observed.apMac && !!observed.ssid)) && source.healthy && online.size>0 && (targets.length===0 || (knownAp && targets.includes(knownAp)?online.has(knownAp):healthy));
+        const transition=evaluateRegistrationState(reg as CurrentRegistrationState,observed,targets,session.ssid,cutoff,session.warningThresholdMinutes,apHealthy);
+        const intervals=[...reg.intervals];
+        const open=intervals.find(i=>!i.leftAt);
+        if((ended || transition.shouldCloseInterval) && open) {
+          const leftAt=ended?cutoff:transition.shouldCloseInterval!.leftAt;
+          const closed=await tx.attendanceInterval.update({where:{id:open.id},data:{leftAt:new Date(Math.max(open.joinedAt.getTime(),leftAt.getTime())),durationSeconds:Math.max(0,Math.floor((leftAt.getTime()-open.joinedAt.getTime())/1000))}});
+          intervals[intervals.indexOf(open)]=closed;
+        }
+        const nextInterval=transition.shouldOpenInterval || (!open?{status:transition.newStatus==='PRESENT'?'PRESENT':transition.newStatus==='UNKNOWN'?'UNKNOWN':'ABSENT',joinedAt:cutoff,apMac:transition.currentApMac}:null);
+        if(!ended && nextInterval && (!open || transition.shouldCloseInterval)) {
+          intervals.push(await tx.attendanceInterval.create({data:{registrationId:reg.id,...nextInterval}}));
+        }
+        const firstSeenAt=reg.firstSeenAt || (transition.newStatus==='PRESENT'?cutoff:null);
+        await tx.attendanceRegistration.update({where:{id:reg.id},data:{
+          ...(ended?{}:{status:transition.newStatus,currentApMac:transition.currentApMac,lastSeenAt:transition.lastSeenAt,absentStartedAt:transition.absentStartedAt,consecutiveMissCount:transition.consecutiveMissCount,warningCount:transition.newWarningCount,currentRssi:observed?.rssi ?? reg.currentRssi,primaryIp:observed?.ip || reg.primaryIp}),
+          firstSeenAt,...attendanceDurations(intervals,firstSeenAt,cutoff),
+        }});
+        if(!ended)for(const event of transition.logEvents)await tx.attendanceLog.create({data:{sessionId:session.id,registrationId:reg.id,type:event.type,message:event.message,details:event.details as any || {},createdAt:cutoff}});
+        result.processedRegistrations++;
+      }
+      if(ended){
+        await tx.attendanceSession.update({where:{id:session.id},data:{status:'ENDED',endedAt:cutoff}});
+        await tx.attendanceLog.create({data:{sessionId:session.id,type:'SESSION_END',message:'Đã kết thúc buổi họp theo thời gian đã thiết lập.',createdAt:cutoff}});
+      }else if(source.healthy){
+        const registered=new Set(session.registrations.map(r=>normalizedMac(r.primaryMac)));
+        for(const client of clients.filter(c=>!registered.has(c.mac) && (!targets.length || targets.includes(c.apMac || '')) && c.ssid===session.ssid && online.has(c.apMac || ''))){
+          await tx.attendanceUnregisteredClient.upsert({where:{sessionId_mac:{sessionId:session.id,mac:client.mac}},update:{ip:client.ip,apMac:client.apMac,signal:client.rssi,lastSeenAt:now},create:{sessionId:session.id,mac:client.mac,ip:client.ip,apMac:client.apMac,signal:client.rssi,firstSeenAt:now,lastSeenAt:now}});
+          result.unregisteredClientsCount++;
+        }
+        await tx.attendanceUnregisteredClient.deleteMany({where:{sessionId:session.id,lastSeenAt:{lt:new Date(now.getTime()-15000)}}});
+      }
+    },{isolationLevel:'ReadCommitted',timeout:30000}); } catch(error) {
+      console.warn('[attendance-monitor] Cannot persist meeting snapshot',candidate.id,error instanceof Error?error.message:'Database unavailable');
+      await writeAttendanceSync(candidate.id,{sampledAt:now.toISOString(),healthy:false,targetAps,message:'Không lưu được chu kỳ đồng bộ. Dữ liệu trước đó được giữ lại.'});
+      await broadcastSessionUpdate(candidate.id,{type:'SYNC_ERROR'});
+      continue;
+    }
+    await writeAttendanceSync(candidate.id,{sampledAt:now.toISOString(),healthy,targetAps,message:healthy?'Đã nhận dữ liệu từ UniFi Controller.':source.healthy?'Một hoặc nhiều AP chưa xác nhận trực tuyến.':'Không kết nối được UniFi Controller; không tính thời gian này là vắng.'});
+    await broadcastSessionUpdate(candidate.id,{type:'TICK_UPDATE',sessionId:candidate.id,timestamp:now.toISOString()});
   }
-
-  return {
-    activeSessionsCount: activeSessions.length,
-    processedRegistrations: totalProcessedRegistrations,
-    unregisteredClientsCount: totalUnregistered,
-    timestamp: now.toISOString(),
-  };
+  return result;
 }

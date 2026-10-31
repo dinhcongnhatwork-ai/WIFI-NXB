@@ -1,9 +1,10 @@
+import {campaignResetEpoch} from '@/lib/network/campaign-reset-policy';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
-import { flowNode, GateScreenId, isTemplateDocumentV2, DeviceVariant, DEVICE_KEYS } from '@/lib/template-document';
+import { flowNode, visibleNodes, GateScreenId, isTemplateDocumentV2, DeviceVariant, DEVICE_KEYS } from '@/lib/template-document';
 import { AttendanceSessionDto } from '@/types/attendance';
 
-type RuntimeDb = Pick<PrismaClient, 'attendanceSession' | 'attendanceRegistration' | 'campaign' | 'template'>;
+type RuntimeDb = Pick<PrismaClient, 'attendanceSession' | 'attendanceRegistration' | 'campaign' | 'template'> & Partial<Pick<PrismaClient,'systemSetting'>>;
 export interface NetworkContext { ssid?: string; apMac?: string; mac?: string; sessionId?: string; campaignId?: string; templateId?: string; unifiSite?: string; device?: DeviceVariant }
 export function cleanMac(value: unknown): string { return typeof value === 'string' ? value.trim().toLowerCase().replace(/-/g, ':') : ''; }
 export class PortalContextError extends Error {}
@@ -25,7 +26,12 @@ export function hasPublishedGate(layout: unknown, screen: GateScreenId, device: 
     || value.children?.some(element => element.type === screen && !element.hidden && element.enabled !== false && element.props?.enabled !== false));
 }
 export function isAttendanceTemplateReady(layout: unknown): boolean {
-  return isTemplateDocumentV2(layout) ? DEVICE_KEYS.every(device => hasPublishedGate(layout, 'attendance_gate', device)) : hasPublishedGate(layout, 'attendance_gate');
+  return isTemplateDocumentV2(layout) ? DEVICE_KEYS.every(device => {
+    if(!hasPublishedGate(layout,'attendance_gate',device))return false;
+    const surface=layout.variants[device].screens?.attendance_gate;
+    // Older V2 documents receive an implicit functional canvas during migration.
+    return !surface || surface.sections.some(section=>!section.hidden && visibleNodes(section.nodes).some(node=>node.element.type==='flow_content' && node.element.screen==='attendance_gate'));
+  }) : hasPublishedGate(layout, 'attendance_gate');
 }
 export async function resolveAttendanceContext(db: RuntimeDb, context: NetworkContext, now = new Date()) {
   const ssid = context.ssid?.trim();
@@ -58,7 +64,7 @@ export async function resolvePortalRuntime(db: RuntimeDb, context: NetworkContex
     const ssid = context.ssid?.trim();
     const valid = { active: true, startTime: { lte: now }, endTime: { gt: now }, template: { publishedRevisionId: { not: null } } };
     campaign = await db.campaign.findFirst({
-      where: { ...valid, ...(ssid ? { ssid } : { portalEnabled: true }) },
+      where: { ...valid, ...(ssid ? { ssid } : { portalEnabled: true }), ...(context.unifiSite ? { OR: [{ unifiSite: context.unifiSite }, { unifiSite: null }], ...(context.campaignId ? { id: context.campaignId } : {}) } : {}) },
       include, orderBy: [{ portalEnabled: 'desc' }, { startTime: 'desc' }, { id: 'asc' }],
     });
     template = campaign?.template ?? null;
@@ -84,10 +90,11 @@ export async function resolvePortalRuntime(db: RuntimeDb, context: NetworkContex
   const isAlreadyRegistered = attendanceSession && cleanMac(context.mac) ? !!(await db.attendanceRegistration.findFirst({ where: { sessionId: attendanceSession.id, primaryMac: cleanMac(context.mac) } })) : false;
   const effectiveTemplateId = template?.id || null;
   const publishedRevisionId = revision ? revision.id : null;
-  const portalSessionId = makePortalSessionId({ device, ssid: context.ssid?.trim() || '', apMac: cleanMac(context.apMac), mac: cleanMac(context.mac), unifiSite: context.unifiSite || '', attendanceSessionId: attendanceSession?.id || '', templateId: effectiveTemplateId || '', revisionId: publishedRevisionId || '', campaignId: campaign?.id || '' });
+  const resetEpoch=context.unifiSite&&campaign?.id?await campaignResetEpoch(db,campaign.id):'';
+  const portalSessionId = makePortalSessionId({ ...(resetEpoch?{resetEpoch}:{}),device, ssid: context.ssid?.trim() || '', apMac: cleanMac(context.apMac), mac: cleanMac(context.mac), unifiSite: context.unifiSite || '', attendanceSessionId: attendanceSession?.id || '', templateId: effectiveTemplateId || '', revisionId: publishedRevisionId || '', campaignId: campaign?.id || '' });
   return { attendanceSession, attendanceAmbiguous: attendance.ambiguous, device, campaign, template, layout, isAlreadyRegistered, effectiveTemplateId, publishedRevisionId, portalSessionId };
 }
-interface PortalContext { device: DeviceVariant; ssid: string; apMac: string; mac: string; unifiSite: string; attendanceSessionId: string; templateId: string; revisionId: string; campaignId: string }
+interface PortalContext { resetEpoch?:string;device: DeviceVariant; ssid: string; apMac: string; mac: string; unifiSite: string; attendanceSessionId: string; templateId: string; revisionId: string; campaignId: string }
 const secret = () => process.env.JWT_SECRET || 'change-me-in-production';
 function signature(value: string): string { return createHmac('sha256', secret()).update(value).digest('base64url'); }
 function makePortalSessionId(context: PortalContext): string {
@@ -102,13 +109,13 @@ export function readPortalSessionId(value: unknown): PortalContext | null {
   if (expected.length !== supplied.length || !timingSafeEqual(Buffer.from(expected), Buffer.from(supplied))) return null;
   try {
     const context = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    return ['ssid', 'apMac', 'mac', 'unifiSite', 'attendanceSessionId', 'templateId', 'revisionId', 'campaignId'].every(key => typeof context[key] === 'string') && DEVICE_KEYS.includes(context.device) ? context : null;
+    return ['ssid', 'apMac', 'mac', 'unifiSite', 'attendanceSessionId', 'templateId', 'revisionId', 'campaignId'].every(key => typeof context[key] === 'string') && DEVICE_KEYS.includes(context.device) && (context.resetEpoch===undefined||typeof context.resetEpoch==='string'&&/^[a-zA-Z\d_-]{1,100}$/.test(context.resetEpoch)) ? context : null;
   } catch { return null; }
 }
 export async function resolvePortalAccess(db: RuntimeDb, context: NetworkContext, portalSessionId?: unknown) {
   if (!portalSessionId) return resolvePortalRuntime(db, context);
   const signed = readPortalSessionId(portalSessionId);
-  if (!signed || (context.device && parseDevice(context.device) !== signed.device) || cleanMac(context.mac) !== signed.mac || (context.ssid && context.ssid.trim() !== signed.ssid) || (context.apMac && cleanMac(context.apMac) !== signed.apMac)) return null;
+  if (!signed || (context.device && parseDevice(context.device) !== signed.device) || cleanMac(context.mac) !== signed.mac || (context.ssid && context.ssid.trim() !== signed.ssid) || (context.apMac && cleanMac(context.apMac) !== signed.apMac) || (context.unifiSite && context.unifiSite !== signed.unifiSite)) return null;
   const runtime = await resolvePortalRuntime(db, { device: signed.device, ssid: signed.ssid, apMac: signed.apMac, mac: signed.mac, unifiSite: signed.unifiSite, sessionId: signed.attendanceSessionId, campaignId: signed.campaignId });
   return runtime.portalSessionId === portalSessionId ? runtime : null;
 }

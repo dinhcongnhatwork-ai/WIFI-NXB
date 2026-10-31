@@ -14,6 +14,7 @@ const requiredString = (value: unknown, label: string): string => {
 };
 // Merge existing fields before validation so partial PATCH and create obey identical rules.
 export function validateSessionInput(body: Record<string, unknown>, current?: Record<string, any>) {
+  if(!body || typeof body!=='object' || Array.isArray(body))throw new AttendanceInputError('Dữ liệu buổi họp không hợp lệ.');
   const value: Record<string, any> = { status: 'DRAFT', unifiSite: 'default', targetApMacs: [], formSchema: DEFAULT_FORM_FIELDS, nameFieldKey: 'fullname', idFieldKey: 'fullname', dialogTitle: 'Điểm danh cuộc họp', confirmButtonText: 'Xác nhận điểm danh và kết nối', successMessage: 'Điểm danh thành công! Đang cấp quyền truy cập Internet...', warningThresholdMinutes: 15, ...current, ...body };
   const name = requiredString(value.name, 'tên buổi họp');
   const ssid = requiredString(value.ssid, 'SSID');
@@ -46,6 +47,7 @@ export async function validateSessionRelations(db: Pick<PrismaClient, 'attendanc
     if (!template?.publishedRevision || !isAttendanceTemplateReady(template.publishedRevision.layoutJson)) throw new AttendanceInputError('Hãy xuất bản mẫu có bật Điểm danh họp trước khi kích hoạt.');
   }
   if (data.status === 'READY' || data.status === 'ACTIVE') {
+    if(campaign && ((campaign.ssid && campaign.ssid!==data.ssid) || (campaign.unifiSite && campaign.unifiSite!==data.unifiSite)))throw new AttendanceInputError('SSID hoặc site của buổi họp không khớp chiến dịch. Chọn lại chiến dịch hoặc bỏ liên kết.');
     const overlaps = await db.attendanceSession.findMany({ where: { ...(current?.id ? { id: { not: current.id } } : {}), ssid: data.ssid, unifiSite: data.unifiSite, status: { in: ['READY', 'ACTIVE'] }, startTime: { lt: data.endTime }, endTime: { gt: data.startTime } } });
     for (const other of overlaps) {
       const targets = Array.isArray(other.targetApMacs) ? other.targetApMacs as string[] : [];

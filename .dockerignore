@@ -21,3 +21,15 @@ README.md
 *.key
 *.p12
 *.pfx
+
+# Local backups and generated reports are not application source.
+Backup WifiMarketing
+*.sql
+*.backup
+*.rsc
+*.tar.gz
+*.tsbuildinfo
+test-results
+playwright-report
+coverage
+.codegraph

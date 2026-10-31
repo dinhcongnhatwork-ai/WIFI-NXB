@@ -78,6 +78,26 @@ describe('CMS Editor Component & Layer Operations', () => {
     expect(section.nodes.find((n) => n.id === titleNode.id)).toBeUndefined();
   });
 
+  it('creates elements with refined default proportions and non-intrusive styling', () => {
+    const logoNode = createNode('logo', 1440);
+    expect(logoNode.layout.width).toBe(160);
+    expect(logoNode.layout.height).toBe(80);
+    expect((logoNode.element as any).width).toBe('140px');
+
+    const containerNode = createNode('container', 1440);
+    expect(containerNode.layout.width).toBe(520);
+    expect(containerNode.layout.height).toBe(180);
+    expect((containerNode.element as any).color).toContain('rgba(255,255,255');
+    expect((containerNode.element as any).backdropBlur).toBe(8);
+
+    const shapeNode = createNode('shape', 1440);
+    expect(shapeNode.layout.width).toBe(120);
+    expect(shapeNode.layout.height).toBe(120);
+
+    const dividerNode = createNode('divider', 1440);
+    expect(dividerNode.layout.height).toBe(16);
+  });
+
   it('updates node media references cleanly', () => {
     const node = createNode('image');
     setNodeMedia(node, 'src', '/api/media/images/2026/09/test.png');
@@ -206,5 +226,36 @@ describe('Cross-Device Copying & Isolation', () => {
     expect(appended.variants.desktop.sections.length).toBe(
       beforeDesktopSections + doc.variants.mobile.sections.length
     );
+  });
+
+  it('reorders layers when dragging and dropping nodes within section', () => {
+    const doc = createDocument();
+    const sec = doc.variants.mobile.sections[0];
+    sec.nodes = [
+      createNode('logo'),
+      createNode('title'),
+      createNode('description'),
+      createNode('connect_button'),
+    ];
+
+    const sourceId = sec.nodes[0].id; // logo
+    const targetId = sec.nodes[2].id; // description
+
+    // Simulate drag drop 'after'
+    const sIdx = sec.nodes.findIndex((n) => n.id === sourceId);
+    const [moved] = sec.nodes.splice(sIdx, 1);
+    const newTargetIdx = sec.nodes.findIndex((n) => n.id === targetId);
+    sec.nodes.splice(newTargetIdx + 1, 0, moved);
+
+    expect(sec.nodes[0].element.type).toBe('title');
+    expect(sec.nodes[1].element.type).toBe('description');
+    expect(sec.nodes[2].element.type).toBe('logo'); // moved after description
+    expect(sec.nodes[3].element.type).toBe('connect_button');
+  });
+
+  it('maintains balanced desktop viewport proportions for laptop screens', () => {
+    const doc = createDocument();
+    expect(doc.variants.desktop.viewport.width).toBe(1440);
+    expect(doc.variants.desktop.viewport.height).toBe(900);
   });
 });

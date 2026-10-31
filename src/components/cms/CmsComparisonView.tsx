@@ -7,18 +7,21 @@ import {
   type TemplateDocumentV2,
   DEVICES,
   type DeviceVariant,
+  type ScreenId,
 } from '@/lib/template-document';
 import { Smartphone, Tablet, Monitor } from 'lucide-react';
 
 interface CmsComparisonViewProps {
   document: TemplateDocumentV2;
   activeDevice: DeviceVariant;
+  screen: ScreenId;
   onSelectDevice: (device: DeviceVariant) => void;
 }
 
 export default function CmsComparisonView({
   document,
   activeDevice,
+  screen,
   onSelectDevice,
 }: CmsComparisonViewProps) {
   const configs: {
@@ -33,7 +36,13 @@ export default function CmsComparisonView({
   ];
 
   return (
-    <div className="w-full h-full overflow-auto bg-[#070b14] p-8 flex flex-col xl:flex-row items-center justify-around gap-8">
+    <div
+      className="w-full h-full overflow-auto bg-slate-100 p-8 flex flex-col xl:flex-row items-center justify-around gap-8"
+      style={{
+        backgroundImage: 'radial-gradient(circle, #cbd5e1 1px, transparent 1px)',
+        backgroundSize: '20px 20px',
+      }}
+    >
       {configs.map(({ device, label, icon: Icon, zoom }) => {
         const viewport = DEVICES[device].presets[0];
         const isActive = device === activeDevice;
@@ -44,28 +53,28 @@ export default function CmsComparisonView({
             onClick={() => onSelectDevice(device)}
             className={`flex flex-col items-center p-4 rounded-2xl border transition-all cursor-pointer ${
               isActive
-                ? 'bg-white/90 border-blue-400 shadow-xl shadow-blue-200 ring-1 ring-blue-300'
-                : 'bg-gray-50 border-gray-200/80 hover:border-gray-300'
+                ? 'bg-white border-blue-500 shadow-lg ring-2 ring-blue-500/20'
+                : 'bg-white/90 border-slate-200 hover:border-slate-300 shadow-sm'
             }`}
           >
             {/* Header tag */}
             <div className="flex items-center gap-2 mb-3 select-none">
               <div
                 className={`p-1.5 rounded-lg ${
-                  isActive ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-400'
+                  isActive ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'
                 }`}
               >
                 <Icon className="w-4 h-4" />
               </div>
               <span
                 className={`text-xs font-semibold ${
-                  isActive ? 'text-white' : 'text-gray-400'
+                  isActive ? 'text-slate-900' : 'text-slate-600'
                 }`}
               >
                 {label}
               </span>
               {isActive && (
-                <span className="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-full font-medium">
+                <span className="text-[10px] bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-full font-medium">
                   Đang chọn
                 </span>
               )}
@@ -83,7 +92,8 @@ export default function CmsComparisonView({
                   document={document}
                   variant={device}
                   viewport={viewport}
-                  mode="simulate"
+                  mode="edit"
+                  screen={screen}
                 />
               </DeviceFrame>
             </div>

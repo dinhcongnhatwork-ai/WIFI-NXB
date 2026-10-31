@@ -41,6 +41,8 @@ const DeviceFrame = forwardRef<DeviceFrameHandle, DeviceFrameProps>(function Dev
   const iframe = useRef<HTMLIFrameElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
   const [body, setBody] = useState<HTMLElement | null>(null);
+  const [scrollY, setScrollY] = useState(0);
+  const [hasOverflow, setHasOverflow] = useState(false);
   const callback = useRef(onWindow);
   callback.current = onWindow;
   const nodeClickRef = useRef(onNodeClick);
@@ -64,6 +66,13 @@ const DeviceFrame = forwardRef<DeviceFrameHandle, DeviceFrameProps>(function Dev
       if (!doc || !win) return;
 
       const sync = () => {
+        let baseEl = doc.head.querySelector('base');
+        if (!baseEl) {
+          baseEl = doc.createElement('base');
+          baseEl.href = window.location.origin + '/';
+          doc.head.insertBefore(baseEl, doc.head.firstChild);
+        }
+
         doc.head.querySelectorAll('[data-frame-style]').forEach((el) => el.remove());
         document.head.querySelectorAll('style, link[rel="stylesheet"]').forEach((el) => {
           const copy = el.cloneNode(true) as HTMLElement;
@@ -72,7 +81,32 @@ const DeviceFrame = forwardRef<DeviceFrameHandle, DeviceFrameProps>(function Dev
         });
         doc.documentElement.className = document.documentElement.className;
         doc.body.className = document.body.className;
-        doc.body.style.cssText = `margin:0;min-height:100vh;background-color:transparent;font-family:${getComputedStyle(document.body).fontFamily};overflow-x:hidden;`;
+        doc.body.style.cssText = `margin:0;min-height:100%;background-color:transparent;font-family:${getComputedStyle(document.body).fontFamily};overflow-x:hidden;`;
+
+        const scrollStyle = doc.createElement('style');
+        scrollStyle.setAttribute('data-frame-scrollbar', '');
+        scrollStyle.textContent = `
+          html, body {
+            overscroll-behavior: contain;
+            scrollbar-width: thin;
+            scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+          }
+          ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+          }
+          ::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          ::-webkit-scrollbar-thumb {
+            background: rgba(148, 163, 184, 0.4);
+            border-radius: 999px;
+          }
+          ::-webkit-scrollbar-thumb:hover {
+            background: rgba(100, 116, 139, 0.65);
+          }
+        `;
+        doc.head.appendChild(scrollStyle);
       };
 
       sync();
@@ -87,11 +121,28 @@ const DeviceFrame = forwardRef<DeviceFrameHandle, DeviceFrameProps>(function Dev
 
       setBody(doc.body);
       callback.current?.(win);
+
+      const checkOverflow = () => {
+        if (doc.documentElement) {
+          setHasOverflow(doc.documentElement.scrollHeight > viewport.height + 24);
+        }
+      };
+      const onScroll = () => {
+        setScrollY(win.scrollY || 0);
+        checkOverflow();
+      };
+      win.addEventListener('scroll', onScroll, { passive: true });
+      checkOverflow();
+
+      return () => {
+        win.removeEventListener('scroll', onScroll);
+      };
     };
 
-    setup();
+    const cleanupSetup = setup();
     frame.addEventListener('load', setup);
     return () => {
+      cleanupSetup?.();
       observer?.disconnect();
       frame.removeEventListener('load', setup);
     };
@@ -122,7 +173,7 @@ const DeviceFrame = forwardRef<DeviceFrameHandle, DeviceFrameProps>(function Dev
       className="relative flex flex-col items-center justify-center select-none transition-transform duration-75"
       style={{
         width: frameWidth * zoom,
-        height: (frameHeight + (device === 'desktop' ? 48 : 0)) * zoom,
+        height: frameHeight * zoom,
         flexShrink: 0,
       }}
     >
@@ -215,31 +266,23 @@ const DeviceFrame = forwardRef<DeviceFrameHandle, DeviceFrameProps>(function Dev
           />
           {body && createPortal(children, body)}
           {overlay}
+
+          {/* Mép màn hình (Fold line indicator) when content is long */}
+          {hasOverflow && scrollY < 20 && (
+            <div
+              className="absolute left-0 right-0 pointer-events-none z-30 transition-opacity"
+              style={{
+                top: viewport.height,
+                borderTop: '1px dashed #3b82f6',
+              }}
+            >
+              <span className="absolute right-2 -top-5 px-1.5 py-0.5 rounded bg-blue-600/90 text-white text-[9px] font-mono shadow-sm">
+                Mép màn hình (khách thấy ngay)
+              </span>
+            </div>
+          )}
         </div>
       </div>
-
-      {/* Desktop Laptop Base (MacBook Notch & Hinge) */}
-      {device === 'desktop' && (
-        <div
-          className="flex flex-col items-center pointer-events-none"
-          style={{
-            transform: `scale(${zoom})`,
-            transformOrigin: 'top center',
-            marginTop: frameHeight,
-          }}
-        >
-          {/* Laptop display hinge notch */}
-          <div className="w-40 h-2 bg-gradient-to-b from-slate-900 to-slate-700 rounded-b-md shadow-md" />
-          {/* Laptop keyboard lip */}
-          <div
-            className="h-3.5 bg-gradient-to-b from-slate-300 via-slate-400 to-slate-500 rounded-b-xl shadow-xl border-x border-b border-slate-400 flex items-center justify-center"
-            style={{ width: Math.min(frameWidth * 1.06, frameWidth + 60) }}
-          >
-            {/* Center thumb notch for opening laptop */}
-            <div className="w-16 h-1 bg-slate-600/40 rounded-full" />
-          </div>
-        </div>
-      )}
     </div>
   );
 });

@@ -80,22 +80,24 @@ export function aggregate(
   };
 }
 export const isOffline = (status?: string) =>
-  /offline|disconnected|disabled|blocked|^0$/.test(status || "");
+  /offline|disconnected|disabled|blocked|^0$/i.test(status || "");
 
-export const TRAFFIC_THRESHOLD_BPS = 1000;
+export const isOnline = (status?: string) =>
+  !isOffline(status) && /^(online|connected|running|1)$/i.test(status || "");
+
+export const TRAFFIC_THRESHOLD_BPS = 1;
 
 export function particleCount(bps?: number | null) {
   if (bps == null || bps < TRAFFIC_THRESHOLD_BPS) return 0;
-  if (bps < 50000) return 1;    // 1 Kbps - 50 Kbps: 1 gentle pulse
-  if (bps < 500000) return 2;   // 50 Kbps - 500 Kbps: 2 pulses
-  if (bps < 5000000) return 3;  // 500 Kbps - 5 Mbps: 3 pulses
-  return 4;                     // > 5 Mbps: 4 pulses (readable, no clutter)
+  if (bps < 1000) return 1;     // 1 bps - 1 Kbps: 1 gentle pulse
+  if (bps < 50000) return 2;    // 1 Kbps - 50 Kbps: 2 pulses
+  if (bps < 500000) return 3;   // 50 Kbps - 500 Kbps: 3 pulses
+  if (bps < 5000000) return 4;  // 500 Kbps - 5 Mbps: 4 pulses
+  return 5;                     // > 5 Mbps: 5 pulses (readable, no clutter)
 }
 
 export function particleDuration(bps: number) {
-  // Calm, graceful, easily observable velocity (4.0s - 6.5s)
-  // Eliminates frantic flashes; higher bandwidth increases particle count, not supersonic speed
-  const clamped = Math.max(1000, bps);
+  const clamped = Math.max(1, bps);
   const logBps = Math.log10(clamped);
-  return Math.max(4.0, Math.min(6.5, 6.5 - (logBps - 3) * 0.45));
+  return Math.max(2.6, Math.min(6.0, 6.0 - logBps * 0.35));
 }

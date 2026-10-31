@@ -20,7 +20,7 @@ function formatEndpoint(raw?: string): string {
 export const BUCKET = process.env.MINIO_BUCKET || 'wifimarketing';
 const endpoint = formatEndpoint(process.env.MINIO_ENDPOINT);
 export const s3Client = new S3Client({ endpoint, region: 'us-east-1', credentials: { accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin', secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin' }, forcePathStyle: true });
-export interface UploadedMedia { url: string; key: string; type: 'image' | 'video'; name: string; size: number; lastModified: string | null; usage?: { id: string; name: string; kind: string }[] }
+export interface UploadedMedia { url: string; key: string; type: 'image' | 'video'; name: string; size: number; lastModified: string | null; folderId?: string | null; folderName?: string | null; usage?: { id: string; name: string; kind: string }[] }
 export function normalizeLegacyMediaUrl(value: string) { return normalizeMediaUrl(value, [endpoint, formatEndpoint(process.env.MINIO_PUBLIC_URL || endpoint)], BUCKET); }
 export async function uploadFile(buffer: Buffer, key: string, contentType: string): Promise<string> {
   if (!isSafeMediaKey(key)) throw new Error('Invalid media key');

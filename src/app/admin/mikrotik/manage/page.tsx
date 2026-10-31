@@ -1,27 +1,25 @@
-'use client';
-import { networkFetch } from '@/components/network/client';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+"use client";
+import styles from "@/components/network/DeviceManagement.module.css";
+import { DeviceIcon } from "@/components/network/DeviceIcon";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { networkFetch } from "@/components/network/client";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Server,
   RefreshCw,
   Power,
-  Shield,
-  FileText,
   Search,
-  Filter,
-  CheckCircle2,
   AlertTriangle,
   Cpu,
   HardDrive,
-  Activity,
-  Layers,
-  X,
-  Clock,
   Terminal,
-} from 'lucide-react';
-import type { MikrotikRouterboard, MikrotikSystemLog, MikrotikSystemResource } from '@/types/mikrotik';
-import { formatBytes } from '@/lib/network/format';
+} from "lucide-react";
+import type {
+  MikrotikRouterboard,
+  MikrotikSystemLog,
+  MikrotikSystemResource,
+} from "@/types/mikrotik";
+import { formatBytes } from "@/lib/network/format";
 
 interface SystemResponse {
   resource: MikrotikSystemResource | null;
@@ -31,16 +29,21 @@ interface SystemResponse {
 }
 
 export default function MikrotikManagePage() {
+  const { canOperate } = useAuth();
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
   const [data, setData] = useState<SystemResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [searchLog, setSearchLog] = useState('');
-  const [selectedTopic, setSelectedTopic] = useState<string>('all');
+  const [searchLog, setSearchLog] = useState("");
+  const [selectedTopic, setSelectedTopic] = useState<string>("all");
   const [actionLoading, setActionLoading] = useState(false);
   const [rebootModal, setRebootModal] = useState(false);
-  const [toastMsg, setToastMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [toastMsg, setToastMsg] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
-  const showToast = (type: 'success' | 'error', text: string) => {
+  const showToast = (type: "success" | "error", text: string) => {
     setToastMsg({ type, text });
     setTimeout(() => setToastMsg(null), 4000);
   };
@@ -49,15 +52,16 @@ export default function MikrotikManagePage() {
     try {
       setLoading(true);
       setError(null);
-      const res = await networkFetch('/api/mikrotik/system');
+      const res = await networkFetch("/api/mikrotik/system");
       const json = await res.json();
       if (json.success && json.data) {
         setData(json.data);
+        setUpdatedAt(new Date());
       } else {
-        setError(json.error || 'Không thể tải thông tin hệ thống MikroTik');
+        setError(json.error || "Không thể tải thông tin hệ thống MikroTik");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lỗi kết nối RouterOS');
+      setError(err instanceof Error ? err.message : "Lỗi kết nối RouterOS");
     } finally {
       setLoading(false);
     }
@@ -68,22 +72,23 @@ export default function MikrotikManagePage() {
   }, [fetchSystemData]);
 
   const handleReboot = async () => {
+    if (!canOperate) return;
     try {
       setActionLoading(true);
-      const res = await networkFetch('/api/mikrotik/system', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'reboot' }),
+      const res = await networkFetch("/api/mikrotik/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reboot" }),
       });
       const json = await res.json();
       if (json.success) {
-        showToast('success', 'Lệnh khởi động lại đã được gửi đến RouterOS');
+        showToast("success", "Lệnh khởi động lại đã được gửi đến RouterOS");
         setRebootModal(false);
       } else {
-        showToast('error', json.error || 'Không thể khởi động lại router');
+        showToast("error", json.error || "Không thể khởi động lại router");
       }
     } catch (err) {
-      showToast('error', err instanceof Error ? err.message : 'Lỗi kết nối');
+      showToast("error", err instanceof Error ? err.message : "Lỗi kết nối");
     } finally {
       setActionLoading(false);
     }
@@ -92,290 +97,325 @@ export default function MikrotikManagePage() {
   const topicsList = useMemo(() => {
     const set = new Set<string>();
     (data?.logs || []).forEach((l) => {
-      l.topics.split(',').forEach((t) => set.add(t.trim()));
+      l.topics.split(",").forEach((t) => set.add(t.trim()));
     });
     return Array.from(set).filter(Boolean);
   }, [data?.logs]);
 
   const filteredLogs = useMemo(() => {
     const q = searchLog.toLowerCase();
-    return (data?.logs || []).filter((l) => {
-      const matchTopic = selectedTopic === 'all' || l.topics.includes(selectedTopic);
-      const matchSearch = !q || l.message.toLowerCase().includes(q) || l.topics.toLowerCase().includes(q);
-      return matchTopic && matchSearch;
+    return (data?.logs || []).filter((log) => {
+      const matchTopic =
+        selectedTopic === "all" ||
+        log.topics
+          .split(",")
+          .map((topic) => topic.trim())
+          .includes(selectedTopic);
+      return (
+        matchTopic &&
+        (!q ||
+          log.message.toLowerCase().includes(q) ||
+          log.topics.toLowerCase().includes(q))
+      );
     });
   }, [data?.logs, searchLog, selectedTopic]);
-
   const res = data?.resource;
   const rb = data?.routerboard;
+  const specs = [
+    {
+      title: "Phần cứng",
+      icon: Server,
+      rows: [
+        ["Model", rb?.model || res?.boardName],
+        ["Số serial", rb?.serialNumber],
+        ["Revision", rb?.revision],
+        ["Firmware hiện tại", rb?.currentFirmware || res?.version],
+        ["Firmware nâng cấp", rb?.upgradeFirmware],
+      ],
+    },
+    {
+      title: "Vi xử lý & nền tảng",
+      icon: Cpu,
+      rows: [
+        ["Kiến trúc", res?.architectureName],
+        ["Số nhân CPU", res?.cpuCount],
+        [
+          "Tần số CPU",
+          res?.cpuFrequency != null ? `${res.cpuFrequency} MHz` : undefined,
+        ],
+        ["Tải CPU", res?.cpuLoad != null ? `${res.cpuLoad}%` : undefined],
+        ["Thời gian hoạt động", res?.uptime],
+      ],
+    },
+    {
+      title: "Bộ nhớ & lưu trữ",
+      icon: HardDrive,
+      rows: [
+        [
+          "Tổng RAM",
+          res?.totalMemory != null ? formatBytes(res.totalMemory) : undefined,
+        ],
+        [
+          "RAM khả dụng",
+          res?.freeMemory != null ? formatBytes(res.freeMemory) : undefined,
+        ],
+        [
+          "Tổng Flash",
+          res?.totalHddSpace != null
+            ? formatBytes(res.totalHddSpace)
+            : undefined,
+        ],
+        [
+          "Flash khả dụng",
+          res?.freeHddSpace != null ? formatBytes(res.freeHddSpace) : undefined,
+        ],
+        ["Build time", res?.buildTime],
+      ],
+    },
+  ];
 
   return (
-    <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 pb-16">
-      {/* Toast Alert */}
-      <AnimatePresence>
-        {toastMsg && (
-          <motion.div
-            initial={{ opacity: 0, y: -20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -20, scale: 0.95 }}
-            className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-xl shadow-xl border text-sm font-medium ${
-              toastMsg.type === 'success'
-                ? 'bg-emerald-950/90 text-emerald-200 border-emerald-500/40 backdrop-blur-md'
-                : 'bg-rose-950/90 text-rose-200 border-rose-500/40 backdrop-blur-md'
-            }`}
-          >
-            {toastMsg.type === 'success' ? (
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-            ) : (
-              <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
-            )}
-            <span>{toastMsg.text}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className={styles.page}>
+      <header className={styles.header}>
         <div>
-          <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Trung tâm quản lý MikroTik RouterOS</h1>
-          <p className="text-xs text-slate-500 mt-1">
-            Thông số phần cứng RouterBOARD, nhật ký hệ thống thời gian thực và lệnh bảo trì phần cứng
+          <span className={styles.eyebrow}>MikroTik / RouterOS</span>
+          <h1>Quản lý thiết bị</h1>
+          <p>
+            Thông tin phần cứng, tài nguyên và nhật ký từ thiết bị đang chọn.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className={styles.actions}>
           <button
             onClick={() => void fetchSystemData()}
             disabled={loading}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
+            className={styles.button}
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
             Làm mới
           </button>
-          <button
-            onClick={() => setRebootModal(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold transition-all"
-          >
-            <Power className="w-3.5 h-3.5" />
-            Khởi động lại router
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="p-4 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* Hardware Specs Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <Server className="w-5 h-5 text-emerald-600" />
-            <h3 className="font-bold text-slate-900 text-sm">Thông số RouterBOARD</h3>
-          </div>
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Model:</span>
-              <span className="font-bold text-slate-800">{rb?.model || res?.boardName || 'CCR2004-16G-2S+'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Số Serial:</span>
-              <span className="font-mono font-bold text-slate-800">{rb?.serialNumber || 'HMM0B2H5QEN'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Revision:</span>
-              <span className="font-mono text-slate-700">{rb?.revision || 'r3'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Firmware hiện tại:</span>
-              <span className="font-mono text-emerald-700 font-bold">{rb?.currentFirmware || res?.version}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Firmware nâng cấp:</span>
-              <span className="font-mono text-blue-700 font-bold">{rb?.upgradeFirmware || '7.24.5'}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <Cpu className="w-5 h-5 text-blue-600" />
-            <h3 className="font-bold text-slate-900 text-sm">Vi xử lý & Nền tảng</h3>
-          </div>
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Kiến trúc:</span>
-              <span className="font-bold text-slate-800">{res?.architectureName || 'arm64'}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Số nhân CPU:</span>
-              <span className="font-bold text-slate-800">{res?.cpuCount || 4} Cores</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Tần số xung nhịp:</span>
-              <span className="font-bold text-slate-800">{res?.cpuFrequency || 2000} MHz</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Tải CPU hiện tại:</span>
-              <span className="font-bold text-blue-600">{res?.cpuLoad || 0}%</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Thời gian hoạt động (Uptime):</span>
-              <span className="font-semibold text-slate-700">{res?.uptime || '-'}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-3">
-          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-            <HardDrive className="w-5 h-5 text-sky-600" />
-            <h3 className="font-bold text-slate-900 text-sm">Bộ nhớ & Lưu trữ</h3>
-          </div>
-          <div className="space-y-2 text-xs">
-            <div className="flex justify-between">
-              <span className="text-slate-400">Tổng bộ nhớ RAM:</span>
-              <span className="font-bold text-slate-800">{formatBytes(res?.totalMemory || 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">RAM Khả dụng:</span>
-              <span className="font-bold text-emerald-600">{formatBytes(res?.freeMemory || 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Tổng bộ nhớ Flash:</span>
-              <span className="font-bold text-slate-800">{formatBytes(res?.totalHddSpace || 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Flash Khả dụng:</span>
-              <span className="font-bold text-sky-600">{formatBytes(res?.freeHddSpace || 0)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-400">Build Time:</span>
-              <span className="text-slate-500 font-mono text-[11px]">{res?.buildTime || '-'}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Live Logs Viewer */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-        <div className="p-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50">
-          <div className="flex items-center gap-2">
-            <Terminal className="w-5 h-5 text-emerald-600" />
-            <div>
-              <h3 className="font-bold text-slate-900 text-sm">Nhật ký sự kiện RouterOS (Live System Logs)</h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Các sự kiện kết nối, khởi động, phân giải DHCP và cảnh báo bảo mật từ phần cứng
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Filter size={14} className="text-slate-400" />
-            <select
-              value={selectedTopic}
-              onChange={(e) => setSelectedTopic(e.target.value)}
-              className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          {canOperate && (
+            <button
+              disabled={loading || !data || actionLoading}
+              onClick={() => setRebootModal(true)}
+              className={`${styles.button} ${styles.danger}`}
             >
-              <option value="all">Tất cả chủ đề (Topics)</option>
-              {topicsList.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-2 text-slate-400" />
-              <input
-                value={searchLog}
-                onChange={(e) => setSearchLog(e.target.value)}
-                placeholder="Tìm nội dung log..."
-                className="w-56 rounded-lg border border-slate-200 py-1 pl-8 pr-3 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-            </div>
-          </div>
+              <Power size={14} />
+              Khởi động lại thiết bị
+            </button>
+          )}
         </div>
-
-        <div className="p-4 overflow-y-auto max-h-[500px] space-y-2 font-mono text-xs">
-          {filteredLogs.map((log) => {
-            const isWarn = log.topics.includes('warning') || log.topics.includes('error');
-            return (
-              <div
-                key={log.id}
-                className={`p-3 rounded-xl border flex flex-col sm:flex-row sm:items-start justify-between gap-2 transition-colors ${
-                  isWarn
-                    ? 'bg-rose-50/50 border-rose-200 text-rose-950'
-                    : 'bg-slate-50/70 border-slate-200/80 hover:bg-slate-50 text-slate-800'
-                }`}
-              >
-                <div className="space-y-1 min-w-0 flex-1">
-                  <div className="flex items-center gap-2 text-[11px]">
-                    <span className="px-2 py-0.5 rounded bg-white border border-slate-200 font-bold text-emerald-800">
-                      {log.topics}
-                    </span>
-                    <span className="text-slate-400">{log.time}</span>
-                  </div>
-                  <p className="break-words leading-relaxed text-slate-900 font-medium">{log.message}</p>
+      </header>
+      {toastMsg && (
+        <p
+          role={toastMsg.type === "error" ? "alert" : "status"}
+          className={toastMsg.type === "error" ? styles.error : styles.notice}
+        >
+          {toastMsg.text}
+        </p>
+      )}
+      {error && (
+        <p role="alert" className={styles.error}>
+          {error}
+        </p>
+      )}
+      <section
+        className={styles.panel}
+        aria-label="Thiết bị đang chọn"
+        aria-busy={loading}
+      >
+        <div className={styles.summary}>
+          <DeviceIcon
+            device={{
+              type: "router",
+              name: data?.identity?.name,
+              meta: {
+                provider: "mikrotik",
+                model: rb?.model || res?.boardName,
+              },
+            }}
+            size={52}
+            fallback={<Server size={36} className="text-slate-400" />}
+          />
+          <div>
+            <h3>
+              {data?.identity?.name ||
+                (loading
+                  ? "Đang tải thông tin thiết bị…"
+                  : "Thiết bị đang chọn")}
+            </h3>
+            <p>
+              {[
+                rb?.model || res?.boardName,
+                res?.version ? `RouterOS ${res.version}` : "RouterOS",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          </div>
+          <span
+            className={`${styles.badge} ${error ? styles.offline : updatedAt ? styles.online : ""}`}
+          >
+            {loading
+              ? "Đang cập nhật"
+              : error
+                ? "Không thể cập nhật"
+                : updatedAt
+                  ? "Đã nhận dữ liệu"
+                  : "Chưa có dữ liệu"}
+          </span>
+          {updatedAt && (
+            <small className={styles.muted}>
+              Cập nhật {updatedAt.toLocaleTimeString("vi-VN")}
+            </small>
+          )}
+        </div>
+      </section>
+      <div className={styles.hardware}>
+        {specs.map((group) => (
+          <section className={styles.panel} key={group.title}>
+            <div className={styles.panelHeading}>
+              <h2 className="flex items-center gap-2">
+                <group.icon size={16} className="text-slate-400" />
+                {group.title}
+              </h2>
+            </div>
+            <dl className="space-y-4 p-5">
+              {group.rows.map(([label, value]) => (
+                <div
+                  key={label}
+                  className="flex items-start justify-between gap-5 text-xs"
+                >
+                  <dt className="text-slate-400">{label}</dt>
+                  <dd className="max-w-[60%] text-right font-medium text-slate-600">
+                    {value ?? "—"}
+                  </dd>
                 </div>
-              </div>
-            );
-          })}
-
-          {filteredLogs.length === 0 && (
-            <div className="p-12 text-center text-slate-400 text-xs">
-              Không tìm thấy nhật ký phù hợp với bộ lọc
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+      <section className={styles.panel} aria-label="Nhật ký thiết bị">
+        <div className={styles.panelHeading}>
+          <div>
+            <h2 className="flex items-center gap-2">
+              <Terminal size={16} className="text-slate-400" />
+              Nhật ký thiết bị
+            </h2>
+            <p>Các sự kiện được đọc từ RouterOS khi làm mới.</p>
+          </div>
+          <span className={styles.results}>
+            {filteredLogs.length} / {data?.logs?.length || 0} sự kiện
+          </span>
+        </div>
+        <div className={styles.toolbar}>
+          <label className={styles.search}>
+            <span className="sr-only">Tìm nhật ký RouterOS</span>
+            <Search size={15} />
+            <input
+              value={searchLog}
+              onChange={(e) => setSearchLog(e.target.value)}
+              placeholder="Tìm nội dung, chủ đề…"
+            />
+          </label>
+          <select
+            aria-label="Lọc chủ đề nhật ký"
+            value={selectedTopic}
+            onChange={(e) => setSelectedTopic(e.target.value)}
+            className={styles.select}
+          >
+            <option value="all">Tất cả chủ đề</option>
+            {topicsList.map((topic) => (
+              <option key={topic} value={topic}>
+                {topic}
+              </option>
+            ))}
+          </select>
+          {(searchLog || selectedTopic !== "all") && (
+            <button
+              className={styles.textButton}
+              onClick={() => {
+                setSearchLog("");
+                setSelectedTopic("all");
+              }}
+            >
+              Xóa bộ lọc
+            </button>
+          )}
+        </div>
+        <div className={styles.logs}>
+          {filteredLogs.map((log) => (
+            <div
+              className={`${styles.logRow} ${/warning|error/.test(log.topics) ? styles.logWarning : ""}`}
+              key={log.id}
+            >
+              <time className={styles.mono}>{log.time}</time>
+              <span className="text-slate-500">{log.topics}</span>
+              <p className={styles.mono}>{log.message}</p>
+            </div>
+          ))}
+          {!filteredLogs.length && (
+            <div className={styles.empty}>
+              <Terminal size={28} />
+              <strong>
+                {loading ? "Đang tải nhật ký…" : "Không có sự kiện phù hợp"}
+              </strong>
+              {searchLog || selectedTopic !== "all"
+                ? "Thử một chủ đề hoặc từ khóa khác."
+                : "Thiết bị chưa trả về nhật ký."}
             </div>
           )}
         </div>
-      </div>
-
-      {/* Reboot Modal */}
-      <AnimatePresence>
-        {rebootModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4"
-            onClick={() => setRebootModal(false)}
+      </section>
+      {!canOperate && (
+        <p className={styles.muted}>
+          Tài khoản Giám sát có quyền xem thông tin thiết bị.
+        </p>
+      )}
+      {rebootModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4"
+          onClick={() => !actionLoading && setRebootModal(false)}
+        >
+          <section
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="reboot-title"
+            className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
           >
-            <motion.div
-              initial={{ scale: 0.95, y: 10 }}
-              animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
-              className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-200"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center gap-3 text-rose-600 mb-3">
-                <AlertTriangle className="w-6 h-6 shrink-0" />
-                <h3 className="text-base font-bold text-slate-900">Xác nhận khởi động lại router?</h3>
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed mb-5">
-                Lệnh Reboot sẽ được thực thi trực tiếp trên hệ thống MikroTik RouterOS. Mọi luồng kết nối Internet sẽ
-                khởi động lại trong 45-60 giây.
-              </p>
-
-              <div className="flex justify-end gap-2.5">
-                <button
-                  onClick={() => setRebootModal(false)}
-                  className="px-4 py-2 text-slate-600 hover:bg-slate-100 rounded-lg text-xs font-semibold transition-colors"
-                >
-                  Hủy bỏ
-                </button>
-                <button
-                  onClick={handleReboot}
-                  disabled={actionLoading}
-                  className="flex items-center gap-2 px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
-                >
-                  {actionLoading && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  Khởi động lại ngay
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </motion.div>
+            <div className="mb-4 flex items-center gap-2">
+              <AlertTriangle size={20} className="text-amber-600" />
+              <h2 id="reboot-title" className="font-semibold">
+                Khởi động lại {data?.identity?.name || "thiết bị"}?
+              </h2>
+            </div>
+            <p className="mb-5 text-sm leading-relaxed text-slate-500">
+              Lệnh được gửi trực tiếp đến RouterOS. Thiết bị và các kết nối đi
+              qua thiết bị có thể bị gián đoạn trong khi khởi động lại.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                className={styles.button}
+                disabled={actionLoading}
+                onClick={() => setRebootModal(false)}
+              >
+                Hủy bỏ
+              </button>
+              <button
+                className={`${styles.button} ${styles.danger}`}
+                disabled={actionLoading}
+                onClick={() => void handleReboot()}
+              >
+                {actionLoading && (
+                  <RefreshCw size={14} className="animate-spin" />
+                )}
+                Khởi động lại ngay
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
   );
 }

@@ -63,8 +63,11 @@ export async function saveConnection(input:SaveConnectionInput,actor:{id:string;
   const name=typeof input.name==='string'?input.name.trim():'';
   if(!name||name.length>120)throw new AccessError(400,'Tên kết nối phải từ 1 đến 120 ký tự.');
   const baseUrl=normalizeBaseUrl(input.baseUrl||'');
-  const acceptedConfig=['site','sites','allowInsecure','apiMode','apiPrefix','snmpEnabled','syslogEnabled'];
+  const acceptedConfig=['site','sites','allowInsecure','apiMode','apiPrefix','snmpEnabled','syslogEnabled','deviceRole','model','location','operatingSystem'];
   const config=Object.fromEntries(Object.entries(input.config||{}).filter(([k])=>acceptedConfig.includes(k)));
+  if(config.deviceRole!==undefined&&!['router','core-switch','access-switch'].includes(String(config.deviceRole)))throw new AccessError(400,'Vai trò thiết bị không hợp lệ.');
+  if(config.operatingSystem!==undefined&&!['routeros','swos'].includes(String(config.operatingSystem)))throw new AccessError(400,'Hệ điều hành thiết bị không hợp lệ.');
+  for(const field of ['model','location'])if(config[field]!==undefined&&(typeof config[field]!=='string'||(config[field] as string).length>160))throw new AccessError(400,'Model và vị trí phải là chuỗi tối đa 160 ký tự.');
   if(config.site!==undefined&&(typeof config.site!=='string'||!/^[a-zA-Z\d_-]{1,100}$/.test(config.site)))throw new AccessError(400,'Site không hợp lệ.');
   if(config.sites!==undefined){
     if(!Array.isArray(config.sites)||config.sites.length>100||config.sites.some(site=>typeof site!=='string'||!/^[a-zA-Z\d_-]{1,100}$/.test(site)))throw new AccessError(400,'Danh sách site giám sát không hợp lệ.');

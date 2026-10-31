@@ -12,6 +12,12 @@ export async function register() {
       startAttendanceWorker(3000);
       const { startMonitorCollectorWorker } = await import('@/lib/monitor/worker');
       startMonitorCollectorWorker(30000);
+      const { startCampaignHotspotWorker } = await import('@/lib/network/campaign-hotspot-worker');
+      startCampaignHotspotWorker(15000);
+      const { startCampaignSessionWorker } = await import('@/lib/network/campaign-session-worker');
+      startCampaignSessionWorker(5000);
+      const {startUnifiExemptWorker}=await import('@/lib/network/unifi-exempt-worker');
+      startUnifiExemptWorker(3000);
     }
   }
 }

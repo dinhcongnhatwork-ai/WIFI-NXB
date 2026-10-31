@@ -207,4 +207,18 @@ describe('Attendance Excel Workbook Generator', () => {
     expect(formatDurationMinutes(300)).toBe('5 phút');
     expect(formatDurationMinutes(3665)).toBe('61 phút 5s');
   });
+  it('reports unknown time separately and uses the configured alert threshold in audit labels', async()=>{
+    const data=structuredClone(mockData);
+    data.session.warningThresholdMinutes=5;
+    data.registrations[0].totalUnknownSeconds=600;
+    data.logs.push({id:'unknown',sessionId:data.session.id,type:'SYSTEM_SYNC',message:'Controller gián đoạn',createdAt:'2026-09-09T09:00:00Z'});
+    data.logs.push({id:'alert-custom',sessionId:data.session.id,type:'ALERT_TRIGGERED',message:'Vắng quá ngưỡng',createdAt:'2026-09-09T09:05:00Z'});
+    const workbook=new ExcelJS.Workbook();await workbook.xlsx.load(await generateAttendanceExcelWorkbook(data) as any);
+    const summary=workbook.getWorksheet('Báo cáo Tổng hợp')!;
+    const headers=summary.getRow(8).values as string[];
+    expect(headers).toContain('Không xác định (phút)');
+    const audit=JSON.stringify(workbook.getWorksheet('Sự cố và Điều chỉnh')!.getSheetValues());
+    expect(audit).not.toContain('Đồng bộ MikroTik');expect(audit).toContain('5p');
+  });
+
 });

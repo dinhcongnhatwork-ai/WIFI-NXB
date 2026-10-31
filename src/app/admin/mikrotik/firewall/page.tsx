@@ -535,7 +535,7 @@ export default function MikrotikFirewallPage() {
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                           item.action === 'masquerade'
                             ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-indigo-100 text-indigo-800'
+                            : 'bg-blue-100 text-blue-800'
                         }`}
                       >
                         {item.action.toUpperCase()}

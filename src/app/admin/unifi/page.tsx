@@ -1,4 +1,5 @@
 "use client";
+import { DeviceIcon } from '@/components/network/DeviceIcon';
 import { SourceStamp } from "@/components/ui/operations";
 import { networkFetch } from "@/components/network/client";
 
@@ -209,7 +210,7 @@ function StatCard({
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm shadow-slate-200/60"
+      className="rounded-xl border border-slate-200 bg-white p-5 "
     >
       <div
         className={`mb-5 flex h-12 w-12 items-center justify-center rounded-2xl ${toneMap[tone]}`}
@@ -267,7 +268,7 @@ export default function UnifiDashboardPage() {
   }, [fetchData]);
 
   const onlineDevices =
-    data?.devices.filter((device) => device.status === "online").length || 0;
+    data?.devices.filter((device) => ["online", "connected"].includes(device.status)).length || 0;
   const totalDevices = data?.devices.length || 0;
   const totalClients = data?.clients.length || 0;
   const wiredClients =
@@ -365,7 +366,7 @@ export default function UnifiDashboardPage() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-rose-100 bg-white p-8 shadow-sm shadow-slate-200/60">
+        <div className="rounded-2xl border border-rose-100 bg-white p-8 ">
           <div className="flex flex-col items-center text-center">
             <XCircle className="mb-4 h-16 w-16 text-rose-400" />
             <h2 className="mb-2 text-xl font-semibold text-slate-900">
@@ -376,7 +377,7 @@ export default function UnifiDashboardPage() {
             </p>
             <button
               onClick={fetchData}
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700"
+              className="inline-flex h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white  transition hover:bg-blue-700"
             >
               <RefreshCw className="h-4 w-4" />
               Thử lại
@@ -423,14 +424,14 @@ export default function UnifiDashboardPage() {
           <button
             onClick={fetchData}
             disabled={loading}
-            className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:opacity-50"
+            className="inline-flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700  transition hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
             Làm mới
           </button>
           <Link
             href="/admin/unifi/settings"
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700"
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white  transition hover:bg-blue-700"
           >
             <Settings className="h-4 w-4" />
             Cấu hình
@@ -473,7 +474,7 @@ export default function UnifiDashboardPage() {
         />
         <StatCard
           sampledAt={lastRefresh}
-          label="Đã tải lên"
+          label="Tổng RX (nhận)"
           value={formatBytes(totalRx)}
           hint={clientsRx > 0 ? "UniFi · rxBytes từ client" : "UniFi · rxBytes từ phía AP"}
           icon={ArrowUpRight}
@@ -481,7 +482,7 @@ export default function UnifiDashboardPage() {
         />
         <StatCard
           sampledAt={lastRefresh}
-          label="Đã tải xuống"
+          label="Tổng TX (gửi)"
           value={formatBytes(totalTx)}
           hint={clientsTx > 0 ? "UniFi · txBytes từ client" : "UniFi · txBytes từ phía AP"}
           icon={ArrowDownRight}
@@ -490,14 +491,14 @@ export default function UnifiDashboardPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
-        <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 ">
           <h2 className="mb-5 text-lg font-semibold text-slate-900">
             Phân bổ thiết bị
           </h2>
           <MiniBarList items={deviceDistribution} />
         </section>
 
-        <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 ">
           <h2 className="mb-5 text-lg font-semibold text-slate-900">
             Chất lượng sóng
           </h2>
@@ -542,7 +543,7 @@ export default function UnifiDashboardPage() {
           </div>
         </section>
 
-        <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 ">
           <h2 className="mb-5 text-lg font-semibold text-slate-900">
             Topology tổng quan
           </h2>
@@ -584,7 +585,7 @@ export default function UnifiDashboardPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="rounded-2xl border border-slate-100 bg-white shadow-sm shadow-slate-200/60">
+        <section className="rounded-xl border border-slate-200 bg-white ">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <div className="flex items-center gap-2">
               <Activity className="h-5 w-5 text-blue-500" />
@@ -627,12 +628,11 @@ export default function UnifiDashboardPage() {
                     className="transition-colors hover:bg-slate-50"
                   >
                     <td className="px-5 py-4">
-                      <p className="text-sm font-semibold text-slate-900">
-                        {device.name || "Unnamed"}
-                      </p>
-                      <p className="font-mono text-xs font-semibold text-slate-500">
-                        {device.mac}
-                      </p>
+                      <div className="flex items-center gap-3">
+                        <DeviceIcon device={{ type: device.type, name: device.name || "Unnamed", meta: { provider: "unifi", model: device.model } }} size={36} fallback={<Server className="h-8 w-8 text-slate-500" />} />
+                        <div><p className="text-[15px] font-semibold text-slate-900">{device.name || "Unnamed"}</p>
+                        <p className="font-mono text-xs text-slate-500">{device.mac}</p></div>
+                      </div>
                     </td>
                     <td className="px-5 py-4">
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
@@ -641,12 +641,12 @@ export default function UnifiDashboardPage() {
                     </td>
                     <td className="px-5 py-4">
                       <span
-                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${device.status === "online" ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}
+                        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold ${["online", "connected"].includes(device.status) ? "bg-emerald-50 text-emerald-700" : "bg-rose-50 text-rose-700"}`}
                       >
                         <span
-                          className={`h-1.5 w-1.5 rounded-full ${device.status === "online" ? "bg-emerald-500" : "bg-rose-500"}`}
+                          className={`h-1.5 w-1.5 rounded-full ${["online", "connected"].includes(device.status) ? "bg-emerald-500" : "bg-rose-500"}`}
                         />
-                        {device.status === "online" ? "Online" : "Offline"}
+                        {["online", "connected"].includes(device.status) ? "Online" : device.status || "Chưa rõ"}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-sm font-semibold text-slate-600">
@@ -675,7 +675,7 @@ export default function UnifiDashboardPage() {
         </section>
 
         <div className="space-y-6">
-          <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 ">
             <div className="mb-5 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-900">
                 Thao tác nhanh
@@ -738,7 +738,7 @@ export default function UnifiDashboardPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+          <section className="rounded-xl border border-slate-200 bg-white p-5 ">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-lg font-semibold text-slate-900">Cảnh báo</h2>
               {criticalAlerts > 0 && (
@@ -779,7 +779,7 @@ export default function UnifiDashboardPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <section className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm shadow-slate-200/60">
+        <section className="rounded-xl border border-slate-200 bg-white p-5 ">
           <div className="mb-5 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-slate-900">
               SSID theo client
@@ -794,7 +794,7 @@ export default function UnifiDashboardPage() {
           <MiniBarList items={topSsids} tone="emerald" />
         </section>
 
-        <section className="rounded-2xl border border-slate-100 bg-white shadow-sm shadow-slate-200/60">
+        <section className="rounded-xl border border-slate-200 bg-white ">
           <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
             <div className="flex items-center gap-2">
               <Wifi className="h-5 w-5 text-blue-500" />
@@ -823,7 +823,7 @@ export default function UnifiDashboardPage() {
                     Signal
                   </th>
                   <th className="px-5 py-3 text-left text-xs font-semibold uppercase text-slate-500">
-                    Data
+                    Tổng lưu lượng
                   </th>
                 </tr>
               </thead>
@@ -834,12 +834,11 @@ export default function UnifiDashboardPage() {
                     className="transition-colors hover:bg-slate-50"
                   >
                     <td className="px-5 py-4">
-                      <p className="text-sm font-semibold text-slate-900">
-                        {client.hostname || "Unknown"}
-                      </p>
-                      <p className="font-mono text-xs font-semibold text-slate-500">
-                        {client.mac}
-                      </p>
+                      <div className="flex items-center gap-3">
+                        <DeviceIcon device={{ type: "client", name: client.hostname || "Unknown", meta: { hostname: client.hostname } }} size={36} fallback={<Users className="h-8 w-8 text-slate-500" />} />
+                        <div><p className="text-[15px] font-semibold text-slate-900">{client.hostname || "Unknown"}</p>
+                        <p className="font-mono text-xs text-slate-500">{client.mac}</p></div>
+                      </div>
                     </td>
                     <td className="px-5 py-4">
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
@@ -851,7 +850,7 @@ export default function UnifiDashboardPage() {
                         className={`inline-flex items-center gap-2 text-sm font-semibold ${getSignalColor(client.signal)}`}
                       >
                         <Signal className="h-4 w-4" />
-                        {client.signal} dBm
+                        {client.isWired || !client.signal ? "—" : `${client.signal} dBm`}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-sm font-semibold text-slate-600">

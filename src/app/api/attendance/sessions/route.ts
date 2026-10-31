@@ -4,35 +4,22 @@ import { prisma } from '@/lib/prisma';
 import { authenticateRequest } from '@/lib/auth';
 import { AttendanceInputError, validateSessionInput, validateSessionRelations } from '@/lib/attendance/session-validation';
 import { lockAttendanceSchedules } from '@/lib/attendance/locking';
-import { AttendanceSessionStatus } from '@/types/attendance';
+import { attendanceListQuery } from '@/lib/attendance/list-query';
+import { readAttendanceSync } from '@/lib/attendance/sync-health';
 
 export const dynamic = 'force-dynamic';
 
 async function handleGET(req: NextRequest) {
   if (!authenticateRequest(req)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
   try {
-    const { searchParams } = new URL(req.url);
-    const status = searchParams.get('status') as AttendanceSessionStatus | null;
-    const search = searchParams.get('search')?.trim();
-
-    const where: any = {};
-    if (status) {
-      where.status = status;
-    }
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { location: { contains: search, mode: 'insensitive' } },
-        { ssid: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
+    const {where,page,limit,skip} = attendanceListQuery(req.nextUrl.searchParams);
+    const total = await prisma.attendanceSession.count({where});
     const sessions = await prisma.attendanceSession.findMany({
       where,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ startTime: 'desc' },{id:'desc'}],skip,take:limit,
       include: {
         template: { select: { id: true, name: true } },
-        campaign: { select: { id: true, name: true, ssid: true } },
+        campaign: { select: { id: true, name: true, ssid: true,template:{select:{id:true,name:true}} } },
         _count: {
           select: {
             registrations: true,
@@ -49,7 +36,8 @@ async function handleGET(req: NextRequest) {
       },
     });
 
-    const data = sessions.map((s) => {
+    const data = await Promise.all(sessions.map(async (s) => {
+      const {targetAps,...sync}=await readAttendanceSync(s.id,s.status==='ACTIVE');
       const presentCount = s.registrations.filter((r) => r.status === 'PRESENT').length;
       const temporaryAbsentCount = s.registrations.filter((r) => r.status === 'TEMPORARY_ABSENT').length;
       const alertAbsentCount = s.registrations.filter((r) => r.status === 'ALERT_ABSENT').length;
@@ -61,7 +49,8 @@ async function handleGET(req: NextRequest) {
         name: s.name,
         location: s.location,
         templateId: s.templateId,
-        templateName: s.template?.name || null,
+        templateName: s.template?.name || s.campaign?.template?.name || null,
+        effectiveTemplateId:s.templateId || s.campaign?.template?.id || null,
         campaignId: s.campaignId,
         campaignName: s.campaign?.name,
         unifiSite: s.unifiSite,
@@ -90,13 +79,14 @@ async function handleGET(req: NextRequest) {
           unknownCount,
           unregisteredCount: s._count.unregisteredClients,
           totalWarnings,
-          syncHealth: s.status === 'ACTIVE' ? 'healthy' : 'healthy',
+          ...sync,
         },
       };
-    });
+    }));
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data,meta:{page,limit,total,totalPages:Math.max(1,Math.ceil(total/limit))} });
   } catch (error) {
+    if(error instanceof AttendanceInputError)return NextResponse.json({success:false,error:error.message},{status:error.status});
     console.error('[api/attendance/sessions GET] Error:', error);
     return NextResponse.json(
       { success: false, error: 'Internal server error' },
